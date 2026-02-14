@@ -1,10 +1,10 @@
-// ZPlayer — Track List Component
 import { icons } from "../core/icons.js";
 import { audioEngine } from "../core/audioEngine.js";
 import { queueManager } from "../core/queue.js";
 import { musicLibrary } from "../core/library.js";
 import { store } from "../core/store.js";
-import { formatTime, createElement } from "../core/utils.js";
+import { haptics } from "../core/haptics.js";
+import { formatTime, createElement, cleanTitle } from "../core/utils.js";
 
 export function renderTrackList(tracks, container, options = {}) {
   const {
@@ -69,17 +69,17 @@ export function renderTrackList(tracks, container, options = {}) {
       </div>
     `;
 
-    // Click to play
     item.addEventListener("click", (e) => {
       if (e.target.closest("[data-action]")) return;
+      haptics.light();
       queueManager.playAll(tracks, index);
       musicLibrary.addToRecent(track.id);
     });
 
-    // Like button
     const likeBtn = item.querySelector('[data-action="like"]');
     likeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      haptics.light();
       const liked = musicLibrary.toggleFavorite(track.id);
       likeBtn.className = `track-like${liked ? " liked" : ""}`;
       likeBtn.innerHTML = liked ? icons.heartFill : icons.heart;
@@ -88,19 +88,11 @@ export function renderTrackList(tracks, container, options = {}) {
       );
     });
 
-    // More button (context menu)
     const moreBtn = item.querySelector('[data-action="more"]');
     moreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      haptics.light();
       store.set("contextMenu", { track });
-    });
-
-    // Hover show more button
-    item.addEventListener("mouseenter", () => {
-      moreBtn.style.opacity = "1";
-    });
-    item.addEventListener("mouseleave", () => {
-      moreBtn.style.opacity = "0";
     });
 
     list.appendChild(item);

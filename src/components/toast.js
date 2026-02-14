@@ -1,4 +1,3 @@
-// ZPlayer — Toast Notification Component
 import { store } from "../core/store.js";
 import { createElement } from "../core/utils.js";
 

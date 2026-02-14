@@ -1,8 +1,6 @@
-// ZPlayer — Entry Point
 import "./styles/index.css";
 import { initApp } from "./app.js";
 
-// Safety Hatch: Catch any top-level errors and show them on screen
 window.onerror = function (msg, url, lineNo, columnNo, error) {
   const errorDiv = document.createElement("div");
   errorDiv.setAttribute(
@@ -18,7 +16,6 @@ window.onunhandledrejection = function (event) {
   console.error("Unhandled Rejection", event.reason);
 };
 
-// Initialize once DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initApp().catch((err) => {

@@ -1,4 +1,3 @@
-// ZPlayer Queue Manager
 import { audioEngine } from "./audioEngine.js";
 
 class QueueManager {
@@ -9,7 +8,6 @@ class QueueManager {
     this.history = [];
     this._listeners = {};
 
-    // Listen to audio engine events
     audioEngine.on("ended", () => this.playNext());
     audioEngine.on("next", () => this.playNext());
     audioEngine.on("prev", () => this.playPrev());
@@ -20,6 +18,9 @@ class QueueManager {
       } else if (audioEngine.repeatMode === "all") {
         this.currentIndex = 0;
       }
+
+      // CRITICAL: Pre-load the track AFTER the one just started
+      this._syncPreload();
 
       this._emit("trackchange", {
         track: this.getCurrentTrack(),
@@ -191,20 +192,22 @@ class QueueManager {
     const track = this.getCurrentTrack();
     if (track) {
       audioEngine.play(track);
-
-      // Pre-load next track for gapless/crossfade
-      const nextIndex = this.currentIndex + 1;
-      if (nextIndex < this.queue.length) {
-        audioEngine.preloadNext(this.queue[nextIndex]);
-      } else if (audioEngine.repeatMode === "all" && this.queue.length > 0) {
-        audioEngine.preloadNext(this.queue[0]);
-      }
-
+      this._syncPreload();
       this._emit("trackchange", { track, index: this.currentIndex });
     }
   }
 
-  // Event system
+  _syncPreload() {
+    const nextIndex = this.currentIndex + 1;
+    if (nextIndex < this.queue.length) {
+      audioEngine.preloadNext(this.queue[nextIndex]);
+    } else if (audioEngine.repeatMode === "all" && this.queue.length > 0) {
+      audioEngine.preloadNext(this.queue[0]);
+    } else {
+      audioEngine.preloadNext(null);
+    }
+  }
+
   on(event, callback) {
     if (!this._listeners[event]) this._listeners[event] = [];
     this._listeners[event].push(callback);

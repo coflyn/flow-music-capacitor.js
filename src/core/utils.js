@@ -1,4 +1,3 @@
-// ZPlayer Utilities
 export function formatTime(seconds) {
   if (!seconds || !isFinite(seconds)) return "0:00";
   const mins = Math.floor(seconds / 60);

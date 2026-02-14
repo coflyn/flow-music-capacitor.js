@@ -1,11 +1,11 @@
-// ZPlayer — Now Playing Full Screen
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { icons } from "../core/icons.js";
 import { audioEngine } from "../core/audioEngine.js";
 import { queueManager } from "../core/queue.js";
 import { musicLibrary } from "../core/library.js";
 import { store } from "../core/store.js";
 import { router } from "../router.js";
-import { formatTime, createElement } from "../core/utils.js";
+import { formatTime, createElement, cleanTitle } from "../core/utils.js";
 
 let progressDragging = false;
 
@@ -55,19 +55,17 @@ export function createNowPlaying() {
       </div>
 
       <div class="now-playing-bottom">
-        <button id="np-device">${icons.volumeUp}</button>
-        <button id="np-queue">${icons.queue}</button>
-        <button id="np-share">${icons.share}</button>
+        <button id="np-volume" aria-label="Volume">${icons.volumeUp}</button>
+        <button id="np-queue" aria-label="Queue">${icons.queue}</button>
+        <button id="np-share" aria-label="Share">${icons.share}</button>
       </div>
     </div>
   `;
 
-  // Close
   el.querySelector("#np-close").addEventListener("click", () => {
     store.set("nowPlayingOpen", false);
   });
 
-  // Controls
   el.querySelector("#np-play").addEventListener("click", () => {
     audioEngine.togglePlay();
   });
@@ -112,6 +110,21 @@ export function createNowPlaying() {
     router.navigate("#/queue");
   });
 
+  el.querySelector("#np-volume").addEventListener("click", () => {
+    if (Capacitor.isNativePlatform()) {
+      registerPlugin("NowPlaying")
+        .showVolume()
+        .catch(() => showVolumeModal());
+    } else {
+      showVolumeModal();
+    }
+  });
+
+  el.querySelector("#np-share").addEventListener("click", () => {
+    const track = queueManager.getCurrentTrack();
+    if (track) shareTrack(track);
+  });
+
   el.querySelector("#np-menu").addEventListener("click", () => {
     const track = queueManager.getCurrentTrack();
     if (track) {
@@ -119,65 +132,53 @@ export function createNowPlaying() {
     }
   });
 
-  // Progress bar seeking
   const progressWrapper = el.querySelector("#np-progress-wrapper");
+  const progressFill = el.querySelector("#np-progress-fill");
+  const timeCurrent = el.querySelector("#np-time-current");
+  let dragTime = 0;
 
-  const seekFromEvent = (e) => {
+  const updateVisualProgress = (e) => {
     const rect = progressWrapper.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = pct * (audioEngine.duration || 0);
-    audioEngine.seek(time);
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    dragTime = pct * (audioEngine.duration || 0);
+
+    // UI Update only
+    progressFill.style.width = pct * 100 + "%";
+    timeCurrent.textContent = formatTime(dragTime);
   };
 
-  progressWrapper.addEventListener("mousedown", (e) => {
+  const startDrag = (e) => {
     progressDragging = true;
-    seekFromEvent(e);
-  });
+    el.classList.add("is-dragging");
+    updateVisualProgress(e);
+  };
 
-  progressWrapper.addEventListener(
-    "touchstart",
-    (e) => {
-      progressDragging = true;
-      const touch = e.touches[0];
-      const rect = progressWrapper.getBoundingClientRect();
-      const pct = Math.max(
-        0,
-        Math.min(1, (touch.clientX - rect.left) / rect.width),
-      );
-      audioEngine.seek(pct * (audioEngine.duration || 0));
-    },
-    { passive: true },
-  );
+  const endDrag = () => {
+    if (progressDragging) {
+      audioEngine.seek(dragTime);
+      progressDragging = false;
+      el.classList.remove("is-dragging");
+    }
+  };
+
+  progressWrapper.addEventListener("mousedown", startDrag);
+  progressWrapper.addEventListener("touchstart", startDrag, { passive: true });
 
   window.addEventListener("mousemove", (e) => {
-    if (progressDragging) seekFromEvent(e);
+    if (progressDragging) updateVisualProgress(e);
   });
-
-  window.addEventListener("mouseup", () => {
-    progressDragging = false;
-  });
-
   window.addEventListener(
     "touchmove",
     (e) => {
-      if (progressDragging) {
-        const touch = e.touches[0];
-        const rect = progressWrapper.getBoundingClientRect();
-        const pct = Math.max(
-          0,
-          Math.min(1, (touch.clientX - rect.left) / rect.width),
-        );
-        audioEngine.seek(pct * (audioEngine.duration || 0));
-      }
+      if (progressDragging) updateVisualProgress(e);
     },
     { passive: true },
   );
 
-  window.addEventListener("touchend", () => {
-    progressDragging = false;
-  });
+  window.addEventListener("mouseup", endDrag);
+  window.addEventListener("touchend", endDrag);
 
-  // Update UI on audio events
   audioEngine.on("trackchange", ({ track }) => updateNowPlayingUI(el, track));
   audioEngine.on("play", () => {
     el.querySelector("#np-play").innerHTML = icons.pause;
@@ -206,7 +207,6 @@ export function createNowPlaying() {
     btn.innerHTML = mode === "one" ? icons.repeatOne : icons.repeat;
   });
 
-  // Open/close reactivity
   store.on("nowPlayingOpen", (open) => {
     if (open) {
       el.classList.add("open");
@@ -217,7 +217,6 @@ export function createNowPlaying() {
     }
   });
 
-  // Real-time metadata updates
   musicLibrary.on("updated", () => {
     const track = queueManager.getCurrentTrack();
     if (track) updateNowPlayingUI(el, track);
@@ -229,7 +228,7 @@ export function createNowPlaying() {
 function updateNowPlayingUI(el, track) {
   el.querySelector("#np-art").src = track.cover || "";
   el.querySelector("#np-bg").style.backgroundImage = `url(${track.cover})`;
-  el.querySelector("#np-title").textContent = track.title;
+  el.querySelector("#np-title").textContent = cleanTitle(track.title, 40);
   el.querySelector("#np-artist").textContent = track.artist;
   updateLikeButton(el, musicLibrary.isFavorite(track.id));
 }
@@ -238,4 +237,54 @@ function updateLikeButton(el, liked) {
   const btn = el.querySelector("#np-like");
   btn.className = `now-playing-like${liked ? " liked" : ""}`;
   btn.innerHTML = liked ? icons.heartFill : icons.heart;
+}
+
+function showVolumeModal() {
+  const content = createElement("div", "volume-modal-content");
+  const currentVol = Math.round(audioEngine.volume * 100);
+
+  content.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: var(--sp-6); align-items: center; padding: var(--sp-2) 0;">
+      <div style="font-size: var(--fs-4xl); color: var(--accent);">${icons.volumeUp}</div>
+      <div style="width: 100%; display: flex; align-items: center; gap: var(--sp-4);">
+        <span style="font-size: var(--fs-xs); width: 30px; text-align: right;">${currentVol}%</span>
+        <input type="range" id="modal-volume-slider" min="0" max="100" step="1" value="${currentVol}" style="flex: 1; accent-color: var(--accent);">
+      </div>
+      <p style="font-size: var(--fs-xs); color: var(--text-tertiary); text-align: center;">Master Volume Control</p>
+    </div>
+  `;
+
+  const slider = content.querySelector("#modal-volume-slider");
+  const label = content.querySelector("span");
+
+  slider.addEventListener("input", (e) => {
+    const val = parseInt(e.target.value);
+    audioEngine.setVolume(val / 100);
+    label.textContent = `${val}%`;
+  });
+
+  store.set("modal", {
+    title: "Volume",
+    content: content,
+  });
+}
+
+async function shareTrack(track) {
+  const shareData = {
+    title: track.title,
+    text: `Listening to ${track.title} by ${track.artist} on Flow Music.`,
+    url: "https://github.com/Flow-Music",
+    dialogTitle: "Share this track",
+  };
+
+  try {
+    const { Share } = await import("@capacitor/share");
+    await Share.share(shareData);
+  } catch (e) {
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      store.showToast("Sharing not supported on this browser.");
+    }
+  }
 }

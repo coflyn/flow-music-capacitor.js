@@ -221,25 +221,122 @@ public class MusicScannerPlugin extends Plugin {
             return;
         }
 
-        Uri folderUri = Uri.parse(folderUriStr);
-        // On modern Android, scanning by folder URI directly via MediaStore is possible if we extract the path
-        // or we can use the DATA filter if we are lucky.
-        // A better way is to filter by RELATIVE_PATH.
-        
-        // Extract a readable path hint if possible
-        String pathIdentifier = folderUri.getLastPathSegment(); // e.g., "primary:Music/MyTracks"
-        if (pathIdentifier != null && pathIdentifier.contains(":")) {
-            pathIdentifier = pathIdentifier.split(":")[1];
-        }
+        new Thread(() -> {
+            try {
+                Uri folderUri = Uri.parse(folderUriStr);
+                androidx.documentfile.provider.DocumentFile rootDir = 
+                    androidx.documentfile.provider.DocumentFile.fromTreeUri(getContext(), folderUri);
 
+                if (rootDir == null || !rootDir.exists()) {
+                    call.reject("Folder not found or inaccessible");
+                    return;
+                }
+
+                JSArray tracks = new JSArray();
+                scanDirectory(rootDir, tracks);
+
+                JSObject result = new JSObject();
+                result.put("tracks", tracks);
+                result.put("folder", rootDir.getName());
+                call.resolve(result);
+
+            } catch (Exception e) {
+                call.reject("Folder scan failed: " + e.getMessage(), e);
+            }
+        }).start();
+    }
+
+    private void scanDirectory(androidx.documentfile.provider.DocumentFile dir, JSArray tracks) {
+        androidx.documentfile.provider.DocumentFile[] files = dir.listFiles();
+        for (androidx.documentfile.provider.DocumentFile file : files) {
+            if (file.isDirectory()) {
+                scanDirectory(file, tracks);
+            } else if (file.isFile() && isAudioFile(file.getType())) {
+                JSObject track = processAudioFile(file);
+                if (track != null) {
+                    tracks.put(track);
+                }
+            }
+        }
+    }
+
+    private boolean isAudioFile(String mimeType) {
+        return mimeType != null && (mimeType.startsWith("audio/") || mimeType.equals("application/ogg"));
+    }
+
+    private JSObject processAudioFile(androidx.documentfile.provider.DocumentFile file) {
+        try {
+            android.media.MediaMetadataRetriever mmr = new android.media.MediaMetadataRetriever();
+            mmr.setDataSource(getContext(), file.getUri());
+
+            String title = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE);
+            String artist = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            String album = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            String durationStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+            
+            // Generate stable IDs based on file info
+            long id = file.getUri().toString().hashCode(); 
+            long albumId = (album != null ? album : "Unknown").hashCode();
+            long artistId = (artist != null ? artist : "Unknown").hashCode();
+
+            JSObject track = new JSObject();
+            track.put("id", "t_" + Math.abs(id));
+            track.put("title", title != null ? title : file.getName());
+            track.put("artist", artist != null ? artist : "Unknown Artist");
+            track.put("album", album != null ? album : "Unknown Album");
+            track.put("albumId", "a_" + Math.abs(albumId));
+            track.put("artistId", "ar_" + Math.abs(artistId));
+            track.put("duration", durationStr != null ? Long.parseLong(durationStr) / 1000 : 0);
+            track.put("src", file.getUri().toString());
+            track.put("contentUri", file.getUri().toString());
+            
+            // Extract and cache album art
+            byte[] artData = mmr.getEmbeddedPicture();
+            String artPath = cacheAlbumArt(artData, "a_" + Math.abs(albumId));
+            track.put("cover", artPath != null ? "file://" + artPath : "");
+
+            try {
+                mmr.release();
+            } catch (Exception ignored) {}
+
+            return track;
+        } catch (Exception e) {
+            // Fallback for unreadable files
+            return null;
+        }
+    }
+
+    private String cacheAlbumArt(byte[] data, String fileName) {
+        if (data == null || data.length == 0) return null;
+        try {
+            File cacheDir = getContext().getCacheDir();
+            File artDir = new File(cacheDir, "album_covers");
+            if (!artDir.exists()) artDir.mkdirs();
+
+            File file = new File(artDir, fileName + ".jpg");
+            // Optimization: If file exists and acts as a cache, skip writing. 
+            // However, different albums might conflict if hashing is weak, but for now assuming albumId hash + file name is unique enough or consistent.
+            if (file.exists() && file.length() > 0) {
+                return file.getAbsolutePath();
+            }
+
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
+            fos.write(data);
+            fos.close();
+            return file.getAbsolutePath();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @PluginMethod
+    public void scanDownloads(PluginCall call) {
         try {
             JSArray tracks = new JSArray();
-            JSArray albums = new JSArray();
-            JSArray artists = new JSArray();
             ContentResolver resolver = getContext().getContentResolver();
-
             Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-            String[] trackProjection = {
+            
+            String[] projection = {
                 MediaStore.Audio.Media._ID,
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
@@ -251,15 +348,14 @@ public class MusicScannerPlugin extends Plugin {
                 MediaStore.Audio.Media.RELATIVE_PATH
             };
 
-            // Filter tracks that are in the chosen path or subpaths
-            String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0 AND (" + 
-                             MediaStore.Audio.Media.DATA + " LIKE ? OR " + 
-                             MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?)";
+            // Modern Android uses RELATIVE_PATH
+            String selection = "(" + MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ? OR " + 
+                              MediaStore.Audio.Media.DATA + " LIKE ?) AND " + 
+                              MediaStore.Audio.Media.IS_MUSIC + " != 0";
             
-            String pattern = "%" + pathIdentifier + "%";
-            String[] selectionArgs = new String[]{pattern, pattern};
+            String[] selectionArgs = new String[]{"%Download%", "%Download%"};
 
-            Cursor cursor = resolver.query(audioUri, trackProjection, selection, selectionArgs, MediaStore.Audio.Media.TITLE + " ASC");
+            Cursor cursor = resolver.query(audioUri, projection, selection, selectionArgs, MediaStore.Audio.Media.TITLE + " ASC");
 
             if (cursor != null) {
                 while (cursor.moveToNext()) {
@@ -288,25 +384,16 @@ public class MusicScannerPlugin extends Plugin {
                     track.put("cover", albumArtUri.toString());
 
                     tracks.put(track);
-                    
-                    // Add album/artist if not already in list (simple unique check)
-                    // ... (for now, we'll just send tracks and let the JS library process them if needed, 
-                    // but scanMusic handled albums separately to be efficient)
                 }
                 cursor.close();
             }
 
-            // For simplicity and speed, we resolve with the found tracks. 
-            // The existing scanMusic logic is more comprehensive for albums/artists across device.
-            // When scanning a folder, we'll return the tracks and let JS reconstruct the album list for that folder.
-            
             JSObject result = new JSObject();
             result.put("tracks", tracks);
-            result.put("folder", pathIdentifier);
             call.resolve(result);
 
         } catch (Exception e) {
-            call.reject("Folder scan failed: " + e.getMessage(), e);
+            call.reject("Scan downloads failed: " + e.getMessage());
         }
     }
 

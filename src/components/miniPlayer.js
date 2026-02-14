@@ -1,10 +1,10 @@
-// ZPlayer — Mini Player Component
 import { icons } from "../core/icons.js";
 import { audioEngine } from "../core/audioEngine.js";
 import { queueManager } from "../core/queue.js";
 import { store } from "../core/store.js";
 import { musicLibrary } from "../core/library.js";
-import { createElement } from "../core/utils.js";
+import { haptics } from "../core/haptics.js";
+import { createElement, cleanTitle } from "../core/utils.js";
 
 export function createMiniPlayer() {
   const el = createElement("div", "mini-player hidden");
@@ -24,29 +24,29 @@ export function createMiniPlayer() {
     </div>
   `;
 
-  // Open now playing on click
   el.addEventListener("click", (e) => {
     if (e.target.closest(".mini-player-controls")) return;
     store.set("nowPlayingOpen", true);
   });
 
-  // Controls
   el.querySelector("#mini-play").addEventListener("click", (e) => {
     e.stopPropagation();
+    haptics.light();
     audioEngine.togglePlay();
   });
 
   el.querySelector("#mini-prev").addEventListener("click", (e) => {
     e.stopPropagation();
+    haptics.light();
     queueManager.playPrev();
   });
 
   el.querySelector("#mini-next").addEventListener("click", (e) => {
     e.stopPropagation();
+    haptics.light();
     queueManager.playNext();
   });
 
-  // Update UI on audio events
   audioEngine.on("trackchange", ({ track }) => {
     el.classList.remove("hidden");
     el.querySelector("#mini-art").src = track.cover || "";
@@ -69,11 +69,10 @@ export function createMiniPlayer() {
     }
   });
 
-  // Real-time metadata updates
   musicLibrary.on("updated", () => {
     const track = queueManager.getCurrentTrack();
     if (track && !el.classList.contains("hidden")) {
-      el.querySelector("#mini-title").textContent = track.title;
+      el.querySelector("#mini-title").textContent = cleanTitle(track.title, 30);
       el.querySelector("#mini-artist").textContent = track.artist;
     }
   });

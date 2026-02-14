@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioManager;
 import android.os.Build;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -118,6 +119,17 @@ public class NowPlayingPlugin extends Plugin {
             getContext().startService(serviceIntent);
         } catch (Exception ignored) {}
         call.resolve();
+    }
+
+    @PluginMethod
+    public void showVolume(PluginCall call) {
+        AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI);
+            call.resolve();
+        } else {
+            call.reject("Audio Service not available");
+        }
     }
 
     @Override

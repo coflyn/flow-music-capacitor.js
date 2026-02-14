@@ -1,4 +1,3 @@
-// ZPlayer — Album Detail Page
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
@@ -38,7 +37,7 @@ export function renderAlbum(container, params) {
 
     <div class="action-bar">
       <button class="action-btn-play" id="play-album">${icons.play}</button>
-      <button class="action-btn" id="shuffle-album">${icons.shuffle}</button>
+      <button class="action-btn" id="shuffle-album">Shuffle</button>
     </div>
 
     <div id="album-tracks"></div>
@@ -46,7 +45,6 @@ export function renderAlbum(container, params) {
 
   container.appendChild(page);
 
-  // Artist link
   const artistLink = page.querySelector("[data-artist-link]");
   if (artistLink) {
     artistLink.addEventListener("click", () => {
@@ -54,18 +52,15 @@ export function renderAlbum(container, params) {
     });
   }
 
-  // Play all
   page.querySelector("#play-album").addEventListener("click", () => {
     queueManager.playAll(tracks, 0);
     musicLibrary.addToRecent(tracks[0].id);
   });
 
-  // Shuffle
   page.querySelector("#shuffle-album").addEventListener("click", () => {
     queueManager.playAll(tracks, 0);
     queueManager.toggleShuffle();
   });
 
-  // Track list
   renderTrackList(tracks, page.querySelector("#album-tracks"));
 }

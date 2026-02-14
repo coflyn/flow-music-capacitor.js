@@ -1,12 +1,11 @@
-// ZPlayer Global Store — Reactive state management
 class Store {
   constructor() {
     this.state = {
       currentView: "home",
       nowPlayingOpen: false,
-      contextMenu: null, // { track, x, y }
-      modal: null, // { type, data }
-      toast: null, // { message }
+      contextMenu: null,
+      modal: null,
+      toast: null,
     };
     this._listeners = {};
   }

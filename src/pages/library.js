@@ -1,10 +1,9 @@
-// ZPlayer — Library Page
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
 import { router } from "../router.js";
 import { store } from "../core/store.js";
-import { createElement } from "../core/utils.js";
+import { createElement, cleanTitle } from "../core/utils.js";
 import { renderTrackList } from "../components/trackList.js";
 
 export function renderLibrary(container) {
@@ -12,12 +11,17 @@ export function renderLibrary(container) {
   const page = createElement("div", "page");
 
   page.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-4);">
-      <h1 style="font-size:var(--fs-2xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-tight);">Your Library</h1>
-      <button class="icon-btn" id="refresh-library-btn" title="Add Music Folder" style="width:36px;height:36px;border-radius:50%;background:var(--bg-surface);">
-        ${icons.folder}
-      </button>
-    </div>
+    <header style="margin-bottom: var(--sp-8);">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between;">
+        <div>
+          <h1 class="page-title" style="margin-bottom: var(--sp-1);">Your Library</h1>
+          <p style="color: var(--text-secondary); font-size: var(--fs-sm);">Manage your local collection.</p>
+        </div>
+        <button class="icon-btn" id="refresh-library-btn" title="Add Music Folder" style="width:40px; height:40px; border-radius:50%; background:var(--bg-surface); display:flex; align-items:center; justify-content:center;">
+          ${icons.folder}
+        </button>
+      </div>
+    </header>
     <div class="tabs" id="library-tabs">
       <button class="tab active" data-tab="songs">Songs</button>
       <button class="tab" data-tab="albums">Albums</button>
@@ -63,7 +67,6 @@ export function renderLibrary(container) {
   const filterInput = page.querySelector("#lib-filter-input");
   const sortBtn = page.querySelector("#lib-sort-btn");
 
-  // Tab click handler
   tabsEl.addEventListener("click", (e) => {
     const tab = e.target.closest(".tab");
     if (!tab) return;
@@ -73,7 +76,6 @@ export function renderLibrary(container) {
       .forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
 
-    // Show/hide controls for Songs/Liked
     const tabName = tab.dataset.tab;
     controlsEl.style.display =
       tabName === "songs" || tabName === "liked" ? "block" : "none";
@@ -81,14 +83,12 @@ export function renderLibrary(container) {
     renderTab(contentEl, tabName, { currentFilter, currentSort });
   });
 
-  // Filter input
   filterInput.addEventListener("input", (e) => {
     currentFilter = e.target.value;
     const activeTab = page.querySelector(".tab.active");
     renderTab(contentEl, activeTab.dataset.tab, { currentFilter, currentSort });
   });
 
-  // Sort button
   sortBtn.addEventListener("click", () => {
     const options = [
       { id: "title", label: "Title" },
@@ -132,14 +132,11 @@ export function renderLibrary(container) {
     });
   });
 
-  // Default tab
   controlsEl.style.display = "block";
   renderTab(contentEl, "songs", { currentFilter, currentSort });
 
-  // Real-time updates (for metadata edits)
   const onUpdate = () => {
     if (document.getElementById("library-tabs")) {
-      // Check if still on library page
       const activeTab = page.querySelector(".tab.active");
       if (activeTab) {
         renderTab(contentEl, activeTab.dataset.tab, {
@@ -203,23 +200,6 @@ function renderSongsTab(
     return;
   }
 
-  // Action bar
-  const actionBar = createElement("div", "action-bar");
-  actionBar.innerHTML = `
-    <button class="action-btn-play" id="play-all-btn">${icons.play}</button>
-    <button class="action-btn" id="shuffle-all-btn">${icons.shuffle}</button>
-  `;
-  container.appendChild(actionBar);
-
-  actionBar.querySelector("#play-all-btn").addEventListener("click", () => {
-    queueManager.playAll(tracks, 0);
-  });
-
-  actionBar.querySelector("#shuffle-all-btn").addEventListener("click", () => {
-    queueManager.playAll(tracks, 0);
-    queueManager.toggleShuffle();
-  });
-
   const trackContainer = createElement("div", "");
   renderTrackList(tracks, trackContainer);
   container.appendChild(trackContainer);
@@ -241,7 +221,7 @@ function renderAlbumsTab(container) {
         <div class="card-art card-art-fallback" style="display:none;align-items:center;justify-content:center;color:var(--text-tertiary)">${icons.album}</div>
         <button class="card-play-btn">${icons.play}</button>
       </div>
-      <div class="card-title">${album.title}</div>
+      <div class="card-title">${cleanTitle(album.title, 30)}</div>
       <div class="card-subtitle">${album.artist}${album.year ? " • " + album.year : ""}</div>
     `;
 
@@ -305,11 +285,24 @@ function renderArtistsTab(container) {
 function renderPlaylistsTab(container) {
   const playlists = musicLibrary.getPlaylists();
 
-  // Create playlist button
+  if (playlists.length === 0) {
+    showEmpty(container, "No playlists yet", "Create your first playlist");
+  }
+
   const createBtn = createElement("button", "featured-card");
   createBtn.style.marginBottom = "var(--sp-4)";
   createBtn.style.border = "1px dashed var(--border-light)";
   createBtn.style.background = "transparent";
+
+  if (playlists.length === 0) {
+    createBtn.style.margin = "var(--sp-8) auto";
+    createBtn.style.display = "flex";
+    createBtn.style.width = "max-content";
+    createBtn.style.padding = "var(--sp-4) var(--sp-10)";
+    createBtn.style.justifyContent = "center";
+    createBtn.style.border = "1px solid var(--border-light)";
+  }
+
   createBtn.innerHTML = `
     <div style="width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary);">
       ${icons.add}
@@ -321,17 +314,21 @@ function renderPlaylistsTab(container) {
   });
   container.appendChild(createBtn);
 
-  if (playlists.length === 0) {
-    showEmpty(container, "No playlists yet", "Create your first playlist");
-    return;
-  }
+  if (playlists.length === 0) return;
 
   playlists.forEach((playlist) => {
     const tracks = musicLibrary.getPlaylistTracks(playlist.id);
+    const coverUrl = playlist.cover || tracks[0]?.cover;
     const card = createElement("div", "featured-card");
     card.style.marginBottom = "var(--sp-2)";
     card.innerHTML = `
-      <img class="featured-card-art" src="${playlist.cover || tracks[0]?.cover || ""}" alt="${playlist.name}" style="background: var(--bg-card);">
+      <div class="featured-card-art-container" style="position: relative; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden; background: var(--bg-card); flex-shrink: 0;">
+        ${
+          coverUrl
+            ? `<img class="featured-card-art" src="${coverUrl}" alt="${playlist.name}" style="width: 100%; height: 100%; object-fit: cover;">`
+            : `<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); background: var(--bg-highlight);">${icons.music}</div>`
+        }
+      </div>
       <span class="featured-card-title">${playlist.name} <span style="color: var(--text-tertiary); font-weight: 400; font-size: 12px;">${tracks.length} songs</span></span>
     `;
     card.addEventListener("click", () => {
@@ -373,23 +370,6 @@ function renderLikedTab(
     );
     return;
   }
-
-  // Action bar
-  const actionBar = createElement("div", "action-bar");
-  actionBar.innerHTML = `
-    <button class="action-btn-play" id="play-liked">${icons.play}</button>
-    <button class="action-btn" id="shuffle-liked">${icons.shuffle}</button>
-  `;
-  container.appendChild(actionBar);
-
-  actionBar.querySelector("#play-liked").addEventListener("click", () => {
-    queueManager.playAll(favorites, 0);
-  });
-
-  actionBar.querySelector("#shuffle-liked").addEventListener("click", () => {
-    queueManager.playAll(favorites, 0);
-    queueManager.toggleShuffle();
-  });
 
   const trackContainer = createElement("div", "");
   renderTrackList(favorites, trackContainer);

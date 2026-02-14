@@ -1,6 +1,3 @@
-// ZPlayer — Local Music Scanner
-// Uses custom Capacitor MusicScanner plugin on Android,
-// falls back to demo data on web
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import tracksData from "../data/tracks.json";
 
@@ -108,8 +105,6 @@ class LocalScanner {
       const finalResult = this._processNativeResult({ tracks: mergedTracks });
       this._cachedResult = finalResult;
 
-      localStorage.setItem("zplayer_scan_cache", JSON.stringify(finalResult));
-
       this._isScanning = false;
       this._emit("scancomplete", { count: processed.tracks.length });
       return finalResult;
@@ -149,10 +144,25 @@ class LocalScanner {
       }
 
       // Scan via native plugin
-      const result = await MusicScanner.scanMusic();
+      const [mainResult, downloadsResult] = await Promise.all([
+        MusicScanner.scanMusic(),
+        MusicScanner.scanDownloads(),
+      ]);
+
+      // Merge results
+      const allTracks = [...(mainResult.tracks || [])];
+      (downloadsResult.tracks || []).forEach((t) => {
+        if (!allTracks.find((existing) => existing.id === t.id)) {
+          allTracks.push(t);
+        }
+      });
 
       // Process the result to match our data format
-      const processed = this._processNativeResult(result);
+      const processed = this._processNativeResult({
+        tracks: allTracks,
+        albums: mainResult.albums || [],
+        artists: mainResult.artists || [],
+      });
       this._cachedResult = processed;
 
       // Cache in localStorage
@@ -177,6 +187,21 @@ class LocalScanner {
   }
 
   /**
+   * Specifically scan the system Downloads folder
+   */
+  async scanDownloads() {
+    if (!this.isNative()) return { tracks: [] };
+
+    try {
+      const result = await MusicScanner.scanDownloads();
+      return this._processNativeResult(result);
+    } catch (err) {
+      console.error("Downloads scan failed:", err);
+      return { tracks: [] };
+    }
+  }
+
+  /**
    * Get cached scan result (no network call)
    */
   getCached() {
@@ -194,9 +219,29 @@ class LocalScanner {
 
     // Build trackIds per album
     const albumTrackMap = {};
+    const trackGeneratedAlbums = {};
+    const trackGeneratedArtists = {};
+
     tracks.forEach((t) => {
       if (!albumTrackMap[t.albumId]) albumTrackMap[t.albumId] = [];
       albumTrackMap[t.albumId].push(t.id);
+
+      // Synthesis: Prepare skeleton objects in case native index is missing them
+      if (!trackGeneratedAlbums[t.albumId]) {
+        trackGeneratedAlbums[t.albumId] = {
+          id: t.albumId,
+          title: t.album || "Unknown Album",
+          artist: t.artist || "Unknown Artist",
+          artistId: t.artistId,
+          cover: t.cover, // already converted in some cases, but we'll use raw for now
+        };
+      }
+      if (!trackGeneratedArtists[t.artistId]) {
+        trackGeneratedArtists[t.artistId] = {
+          id: t.artistId,
+          name: t.artist || "Unknown Artist",
+        };
+      }
     });
 
     // Find artistId for each album from tracks
@@ -205,13 +250,29 @@ class LocalScanner {
       if (!albumArtistMap[t.albumId]) albumArtistMap[t.albumId] = t.artistId;
     });
 
+    // Merge native albums with synthesized ones
+    const finalAlbums = [...albums];
+    Object.keys(trackGeneratedAlbums).forEach((id) => {
+      if (!finalAlbums.find((a) => a.id === id)) {
+        finalAlbums.push(trackGeneratedAlbums[id]);
+      }
+    });
+
+    // Merge native artists with synthesized ones
+    const finalArtists = [...artists];
+    Object.keys(trackGeneratedArtists).forEach((id) => {
+      if (!finalArtists.find((ar) => ar.id === id)) {
+        finalArtists.push(trackGeneratedArtists[id]);
+      }
+    });
+
     // Enrich albums — convert cover URIs for WebView
-    const enrichedAlbums = albums.map((a) => ({
+    const enrichedAlbums = finalAlbums.map((a) => ({
       ...a,
       trackIds: albumTrackMap[a.id] || [],
-      artistId: albumArtistMap[a.id] || "",
+      artistId: albumArtistMap[a.id] || a.artistId || "",
       cover: convertUri(a.cover),
-      genre: "",
+      genre: a.genre || "",
     }));
 
     // For tracks — convert BOTH src (for playback) AND cover (for display)
@@ -228,7 +289,7 @@ class LocalScanner {
     return {
       tracks: enrichedTracks,
       albums: enrichedAlbums,
-      artists: artists,
+      artists: finalArtists,
     };
   }
 
@@ -256,7 +317,6 @@ class LocalScanner {
     };
   }
 
-  // Event system
   on(event, cb) {
     if (!this._listeners[event]) this._listeners[event] = [];
     this._listeners[event].push(cb);

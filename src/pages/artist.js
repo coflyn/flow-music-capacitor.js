@@ -1,4 +1,3 @@
-// ZPlayer — Artist Detail Page
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
@@ -40,7 +39,7 @@ export function renderArtist(container, params) {
 
     <div class="action-bar">
       <button class="action-btn-play" id="play-artist">${icons.play}</button>
-      <button class="action-btn" id="shuffle-artist">${icons.shuffle}</button>
+      <button class="action-btn" id="shuffle-artist">Shuffle</button>
     </div>
 
     <div id="artist-popular"></div>
@@ -49,19 +48,16 @@ export function renderArtist(container, params) {
 
   container.appendChild(page);
 
-  // Play all
   page.querySelector("#play-artist").addEventListener("click", () => {
     queueManager.playAll(tracks, 0);
     musicLibrary.addToRecent(tracks[0].id);
   });
 
-  // Shuffle
   page.querySelector("#shuffle-artist").addEventListener("click", () => {
     queueManager.playAll(tracks, 0);
     queueManager.toggleShuffle();
   });
 
-  // Popular tracks section
   const popularSection = page.querySelector("#artist-popular");
   popularSection.innerHTML =
     '<h3 class="section-title" style="margin-bottom: var(--sp-4);">Popular</h3>';
@@ -69,7 +65,6 @@ export function renderArtist(container, params) {
   renderTrackList(tracks, trackContainer);
   popularSection.appendChild(trackContainer);
 
-  // Albums section
   if (albums.length > 0) {
     const albumSection = page.querySelector("#artist-albums");
     albumSection.innerHTML =

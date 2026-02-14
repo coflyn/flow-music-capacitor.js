@@ -1,4 +1,3 @@
-// ZPlayer Router — Hash-based SPA router
 import { store } from "./core/store.js";
 
 class Router {
@@ -28,7 +27,6 @@ class Router {
   _resolve() {
     const hash = window.location.hash || "#/";
 
-    // Try exact match first
     if (this.routes[hash]) {
       this.params = {};
       this.currentRoute = hash;
@@ -37,7 +35,6 @@ class Router {
       return;
     }
 
-    // Try parameterized routes
     const parts = hash.split("/").filter(Boolean);
 
     for (const [pattern, handler] of Object.entries(this.routes)) {
@@ -64,7 +61,6 @@ class Router {
       }
     }
 
-    // Fallback to home
     this.navigate("#/");
   }
 }

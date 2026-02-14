@@ -1,4 +1,3 @@
-// ZPlayer — Modal Component
 import { store } from "../core/store.js";
 import { musicLibrary } from "../core/library.js";
 import { createElement } from "../core/utils.js";
@@ -26,7 +25,6 @@ function showModal(wrapper, modal) {
   } else if (modal.type === "rename-playlist") {
     showRenamePlaylistModal(wrapper, modal.data);
   } else if (modal.content) {
-    // Generic content modal (e.g., metadata editor)
     showContentModal(wrapper, modal);
   }
 }
@@ -42,7 +40,6 @@ function showContentModal(wrapper, modal) {
     </div>
   `;
 
-  // Insert the content element
   const slot = wrapper.querySelector("#modal-content-slot");
   if (modal.content instanceof HTMLElement) {
     slot.appendChild(modal.content);
@@ -50,7 +47,6 @@ function showContentModal(wrapper, modal) {
     slot.innerHTML = modal.content;
   }
 
-  // Close on overlay click
   wrapper.querySelector(".modal-overlay").addEventListener("click", (e) => {
     if (e.target.classList.contains("modal-overlay")) {
       store.set("modal", null);
@@ -99,7 +95,6 @@ function showCreatePlaylistModal(wrapper, data = {}) {
     if (e.key === "Escape") store.set("modal", null);
   });
 
-  // Close on overlay click
   wrapper.querySelector(".modal-overlay").addEventListener("click", (e) => {
     if (e.target.classList.contains("modal-overlay")) {
       store.set("modal", null);
@@ -137,7 +132,6 @@ function showRenamePlaylistModal(wrapper, data = {}) {
       musicLibrary.renamePlaylist(playlist.id, name);
       store.showToast(`Renamed to "${name}"`);
       store.set("modal", null);
-      // Re-render playlist page
       window.location.hash = `#/playlist/${playlist.id}`;
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     }

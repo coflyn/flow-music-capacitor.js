@@ -1,5 +1,3 @@
-// Flow Audio Engine — Singleton audio controller
-// Supports Gapless Playback, Crossfade, and Sleep Timer
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { store } from "./store.js";
 
@@ -23,15 +21,23 @@ class AudioEngine {
     this.currentTime = 0;
     this.duration = 0;
     this.volume = 1;
-    this.repeatMode = "all"; // off, one, all
+    this.repeatMode = "all";
     this.shuffleMode = false;
 
-    // Pro Settings
-    this.crossfadeDuration = 0; // seconds (0 = gapless)
+    this.crossfadeDuration =
+      parseFloat(localStorage.getItem("flow_crossfade")) || 1.5;
     this.sleepTimer = null;
     this.stopAfterCurrent = false;
 
-    // Internal flags
+    this.pauseOnDisconnect =
+      localStorage.getItem("flow_pause_disconnect") !== "false";
+    this.playOnConnect = localStorage.getItem("flow_play_connect") === "true";
+    this.avoidShortTracks =
+      localStorage.getItem("flow_avoid_short") !== "false";
+    this.minTrackDuration =
+      parseInt(localStorage.getItem("flow_min_duration")) || 30;
+
+    this.consecutiveErrorCount = 0;
     this._transitionedFrom = null;
     this._changingTrack = false;
     this._pendingNextTimeout = null;
@@ -39,17 +45,30 @@ class AudioEngine {
 
     this._listeners = {};
 
-    // EQ state — Web Audio API is NOT initialized until user changes EQ
-    // This preserves native audio quality on Android
     this.audioCtx = null;
     this.eqFilters = null;
     this.masterGain = null;
+    this.volumeGain = null;
     this._eqInitialized = false;
 
     this._setupAudioEvents(this.audioA);
     this._setupAudioEvents(this.audioB);
     this._setupMediaSession();
     this._setupNativeListener();
+
+    setTimeout(() => this._loadEQSettings(), 100);
+  }
+
+  _loadEQSettings() {
+    const saved = localStorage.getItem("flow_eq_gains");
+    if (saved) {
+      try {
+        const gains = JSON.parse(saved);
+        if (Array.isArray(gains)) {
+          gains.forEach((g, i) => this.setEQGain(i, g));
+        }
+      } catch (e) {}
+    }
   }
 
   /**
@@ -65,12 +84,14 @@ class AudioEngine {
         sampleRate: 48000,
       });
 
-      // Master gain node
-      this.masterGain = this.audioCtx.createGain();
-      this.masterGain.gain.value = 1.0;
-      this.masterGain.connect(this.audioCtx.destination);
+      this.volumeGain = this.audioCtx.createGain();
+      this.volumeGain.gain.value = this.volume;
 
-      // EQ Bands (Hz)
+      this.masterGain = this.audioCtx.createGain();
+      this.masterGain.gain.value = 1.2; // Makeup gain for EQ overhead
+      this.masterGain.connect(this.audioCtx.destination);
+      this.volumeGain.connect(this.masterGain);
+
       const frequencies = [60, 230, 910, 3600, 14000];
       this.eqFilters = frequencies.map((freq) => {
         const filter = this.audioCtx.createBiquadFilter();
@@ -81,20 +102,17 @@ class AudioEngine {
         return filter;
       });
 
-      // Connect filters in chain → masterGain
       this.eqFilters.reduce((prev, next) => {
         prev.connect(next);
         return next;
       });
-      this.eqFilters[this.eqFilters.length - 1].connect(this.masterGain);
+      this.eqFilters[this.eqFilters.length - 1].connect(this.volumeGain);
 
-      // Capture audio elements into Web Audio graph
       this.sourceA = this.audioCtx.createMediaElementSource(this.audioA);
       this.sourceB = this.audioCtx.createMediaElementSource(this.audioB);
       this.sourceA.connect(this.eqFilters[0]);
       this.sourceB.connect(this.eqFilters[0]);
 
-      // Resume context if suspended
       if (this.audioCtx.state === "suspended") {
         this.audioCtx.resume().catch(() => {});
       }
@@ -111,7 +129,6 @@ class AudioEngine {
   }
 
   setEQGain(index, gain) {
-    // Lazy-init: first EQ change triggers Web Audio setup
     this._ensureAudioContext();
     if (this.eqFilters && this.eqFilters[index]) {
       this.eqFilters[index].gain.setTargetAtTime(
@@ -119,6 +136,8 @@ class AudioEngine {
         this.audioCtx.currentTime,
         0.05,
       );
+      const gains = this.getEQGains();
+      localStorage.setItem("flow_eq_gains", JSON.stringify(gains));
     }
   }
 
@@ -129,6 +148,16 @@ class AudioEngine {
   }
 
   _setupAudioEvents(player) {
+    // Resume AudioContext on user interaction or visibility change to prevent "dead" audio
+    const resumeCtx = () => {
+      if (this.audioCtx && this.audioCtx.state === "suspended") {
+        this.audioCtx.resume();
+      }
+    };
+    document.addEventListener("click", resumeCtx);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resumeCtx();
+    });
     player.addEventListener("timeupdate", () => {
       if (player !== this.activePlayer || this._changingTrack) return;
 
@@ -140,15 +169,15 @@ class AudioEngine {
         duration: this.duration,
       });
 
-      // Update position in notification every ~1s
       if (Math.floor(this.currentTime) % 1 === 0) {
         this._updateMediaPosition();
       }
 
-      // Handle Crossfade / Transition trigger
       if (this.nextTrack && !this.isCrossfading && this.duration > 0) {
         const remaining = this.duration - this.currentTime;
-        if (remaining <= this.crossfadeDuration + 0.5) {
+        // Trigger precisely at the crossfade duration, or 0.1s for gapless
+        const triggerPoint = Math.max(0.1, this.crossfadeDuration);
+        if (remaining <= triggerPoint) {
           this._startTransition();
         }
       }
@@ -180,6 +209,7 @@ class AudioEngine {
     player.addEventListener("play", () => {
       if (player === this.activePlayer) {
         this.isPlaying = true;
+        this.consecutiveErrorCount = 0; // Reset on successful play
         this._emit("play", { track: this.currentTrack });
         if ("mediaSession" in navigator)
           navigator.mediaSession.playbackState = "playing";
@@ -218,6 +248,17 @@ class AudioEngine {
       console.error("Audio error:", e);
 
       if (player === this.activePlayer) {
+        this.consecutiveErrorCount++;
+
+        if (this.consecutiveErrorCount >= 5) {
+          this.pause();
+          this._emit("toast", {
+            message: "Multiple playback failures. Stopping. 🛑",
+          });
+          this.consecutiveErrorCount = 0;
+          return;
+        }
+
         this._emit("error", { error: e });
         // Auto-skip to next track on actual media errors, but only if still current
         this._scheduleNext(transitionId);
@@ -275,16 +316,11 @@ class AudioEngine {
           ? [{ src: track.cover, sizes: "512x512", type: "image/jpeg" }]
           : [],
       });
-
-      // Handle YouTube description in metadata if available
       if (track.isYouTube && track.description) {
-        // We could show this in a specfic UI part later
       }
 
-      // Force update playback state
       this._updatePlaybackState();
 
-      // Update position state for seekbar in notification
       this._updateMediaPosition();
     }
   }
@@ -336,6 +372,9 @@ class AudioEngine {
     this.nextTrack = null;
     this._transitionedFrom = null;
 
+    this.currentTime = 0;
+    this.duration = 0;
+
     // Update metadata IMMEDIATELY (before play) so UI updates even if play is slow
     this._updateMediaSession(track);
     this._updateNativeNotification(track, true);
@@ -345,7 +384,9 @@ class AudioEngine {
     this._changingTrack = true;
     this.activePlayer.pause();
     this.activePlayer.src = track.src;
-    this.activePlayer.volume = this.volume; // Reset volume in case it was fading out
+    // When Web Audio is active, we let the GainNode handle the master volume
+    // but the player itself must be at 1.0 to feed the graph at full scale.
+    this.activePlayer.volume = this._eqInitialized ? 1.0 : this.volume;
     // NOTE: _changingTrack stays true until play() resolves/rejects
 
     // Resume AudioContext if it exists and is suspended
@@ -354,47 +395,53 @@ class AudioEngine {
     }
 
     // Play — don't await to preserve user gesture context
-    // Use .then/.catch for handling
     const transitionId = this._currentTransitionId;
-    this.activePlayer
-      .play()
-      .then(() => {
-        // Abortion guard
-        if (this._currentTransitionId !== transitionId) return;
 
-        this._changingTrack = false;
+    // Safety delay for Android WebView src transition
+    setTimeout(() => {
+      if (this._currentTransitionId !== transitionId) return;
 
-        // Dynamic Colors — scoped to Now Playing screen only
-        if (track.cover) {
-          import("./utils.js").then(async ({ getDominantColor, rgbToHex }) => {
-            if (this._currentTransitionId !== transitionId) return;
-            const color = await getDominantColor(track.cover);
-            if (this._currentTransitionId !== transitionId) return;
-            const hex = rgbToHex(color.r, color.g, color.b);
-            const npEl = document.getElementById("now-playing");
-            if (npEl) {
-              npEl.style.setProperty("--np-accent", hex);
-              npEl.style.setProperty(
-                "--np-accent-glow",
-                `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`,
-              );
-            }
-          });
-        }
-      })
-      .catch((err) => {
-        if (this._currentTransitionId !== transitionId) return;
+      this.activePlayer
+        .play()
+        .then(() => {
+          // Abortion guard
+          if (this._currentTransitionId !== transitionId) return;
 
-        this._changingTrack = false;
-        console.error("Play failed:", err);
-        // Only auto-skip on actual media errors, not user gesture issues
-        if (err.name !== "NotAllowedError") {
-          this._scheduleNext(transitionId);
-        }
-      });
+          this._changingTrack = false;
+
+          // Dynamic Colors — scoped to Now Playing screen only
+          if (track.cover) {
+            import("./utils.js").then(
+              async ({ getDominantColor, rgbToHex }) => {
+                if (this._currentTransitionId !== transitionId) return;
+                const color = await getDominantColor(track.cover);
+                if (this._currentTransitionId !== transitionId) return;
+                const hex = rgbToHex(color.r, color.g, color.b);
+                const npEl = document.getElementById("now-playing");
+                if (npEl) {
+                  npEl.style.setProperty("--np-accent", hex);
+                  npEl.style.setProperty(
+                    "--np-accent-glow",
+                    `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`,
+                  );
+                }
+              },
+            );
+          }
+        })
+        .catch((err) => {
+          if (this._currentTransitionId !== transitionId) return;
+
+          this._changingTrack = false;
+          console.error("Play failed:", err);
+          // Only auto-skip on actual media errors, not user gesture issues
+          if (err.name !== "NotAllowedError") {
+            this._scheduleNext(transitionId);
+          }
+        });
+    }, 50);
   }
 
-  // Pre-load the next track for gapless/crossfade
   preloadNext(track) {
     if (!track || !track.src) {
       this.nextTrack = null;
@@ -414,10 +461,8 @@ class AudioEngine {
     const fadeInPlayer = this.nextPlayer;
     const duration = this.crossfadeDuration;
 
-    // Mark old player so its ended event is ignored
     this._transitionedFrom = fadeOutPlayer;
 
-    // Switch roles
     this.activePlayer = fadeInPlayer;
     this.nextPlayer = fadeOutPlayer;
     this.currentTrack = this.nextTrack;
@@ -426,47 +471,30 @@ class AudioEngine {
     fadeInPlayer.volume = 0;
     fadeInPlayer.currentTime = 0;
 
+    this.currentTime = 0;
+    this.duration = 0;
+
+    this._emit("transition", { track: this.currentTrack });
+    this._emit("trackchange", { track: this.currentTrack });
+    this._updateMediaSession(this.currentTrack);
+    this._updateNativeNotification(this.currentTrack, true);
+
     try {
       await fadeInPlayer.play();
       if (this._currentTransitionId !== transitionId) return;
 
-      this._emit("transition", { track: this.currentTrack });
-      this._emit("trackchange", { track: this.currentTrack });
-      this._updateMediaSession(this.currentTrack);
-      this._updateNativeNotification(this.currentTrack, true);
-
-      // Dynamic Colors — scoped to Now Playing screen only
-      if (this.currentTrack.cover) {
-        import("./utils.js").then(async ({ getDominantColor, rgbToHex }) => {
-          if (this._currentTransitionId !== transitionId) return;
-          const color = await getDominantColor(this.currentTrack.cover);
-          const hex = rgbToHex(color.r, color.g, color.b);
-          const npEl = document.getElementById("now-playing");
-          if (npEl) {
-            npEl.style.setProperty("--np-accent", hex);
-            npEl.style.setProperty(
-              "--np-accent-glow",
-              `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`,
-            );
-          }
-        });
-      }
-
       if (duration > 0) {
-        // Crossfade logic
-        const steps = 20;
-        const interval = (duration * 1000) / steps;
-        const volStep = this.volume / steps;
-
-        for (let i = 1; i <= steps; i++) {
-          await new Promise((r) => setTimeout(r, interval));
-          if (this._currentTransitionId !== transitionId) return;
-
-          fadeInPlayer.volume = Math.min(this.volume, i * volStep);
-          fadeOutPlayer.volume = Math.max(0, this.volume - i * volStep);
+        if (this._eqInitialized && this.audioCtx && this.masterGain) {
+          this._volumeRamp(fadeInPlayer, 0, this.volume, duration);
+          this._volumeRamp(fadeOutPlayer, this.volume, 0, duration);
+        } else {
+          this._volumeRamp(fadeInPlayer, 0, this.volume, duration);
+          this._volumeRamp(fadeOutPlayer, this.volume, 0, duration);
         }
+
+        await new Promise((r) => setTimeout(r, duration * 1000));
+        if (this._currentTransitionId !== transitionId) return;
       } else {
-        // Gapless (immediate)
         fadeInPlayer.volume = this.volume;
       }
 
@@ -479,6 +507,24 @@ class AudioEngine {
         this.isCrossfading = false;
       }
     }
+  }
+
+  /**
+   * Smooth volume ramping for players
+   */
+  async _volumeRamp(player, start, end, duration) {
+    const steps = 40; // Higher resolution for smoother "feel"
+    const interval = (duration * 1000) / steps;
+    const volStep = (end - start) / steps;
+    let currentVol = start;
+
+    for (let i = 0; i < steps; i++) {
+      if (player.src === "") break; // Aborted
+      currentVol += volStep;
+      player.volume = Math.max(0, Math.min(1, currentVol));
+      await new Promise((r) => setTimeout(r, interval));
+    }
+    player.volume = end;
   }
 
   pause() {
@@ -524,7 +570,14 @@ class AudioEngine {
 
   setVolume(level) {
     this.volume = Math.max(0, Math.min(1, level));
-    if (!this.isCrossfading) {
+    if (this._eqInitialized && this.volumeGain) {
+      this.volumeGain.gain.setTargetAtTime(
+        this.volume,
+        this.audioCtx.currentTime,
+        0.02,
+      );
+      this.activePlayer.volume = 1.0;
+    } else if (!this.isCrossfading) {
       this.activePlayer.volume = this.volume;
     }
     this._emit("volumechange", { volume: this.volume });
@@ -532,9 +585,9 @@ class AudioEngine {
 
   setCrossfade(seconds) {
     this.crossfadeDuration = Math.max(0, Math.min(12, seconds));
+    localStorage.setItem("flow_crossfade", this.crossfadeDuration.toString());
   }
 
-  // Sleep Timer
   setSleepTimer(minutes) {
     if (this.sleepTimer) clearTimeout(this.sleepTimer);
     if (minutes <= 0) {
@@ -574,6 +627,28 @@ class AudioEngine {
     return this.stopAfterCurrent;
   }
 
+  setPauseOnDisconnect(enabled) {
+    this.pauseOnDisconnect = enabled;
+    localStorage.setItem("flow_pause_disconnect", enabled.toString());
+  }
+
+  setPlayOnConnect(enabled) {
+    this.playOnConnect = enabled;
+    localStorage.setItem("flow_play_connect", enabled.toString());
+  }
+
+  setAvoidShortTracks(enabled) {
+    this.avoidShortTracks = enabled;
+    localStorage.setItem("flow_avoid_short", enabled.toString());
+    this._emit("library_filter_change");
+  }
+
+  setMinTrackDuration(seconds) {
+    this.minTrackDuration = seconds;
+    localStorage.setItem("flow_min_duration", seconds.toString());
+    this._emit("library_filter_change");
+  }
+
   _handleTrackEnd() {
     this._clearPendingNext();
     if (this.repeatMode === "one") {
@@ -584,20 +659,18 @@ class AudioEngine {
     }
   }
 
-  // === Native Notification Bridge ===
   _updateNativeNotification(track, isPlaying) {
     if (!NowPlaying || !track) return;
     NowPlaying.updateNotification({
       title: track.title || "Flow",
       artist: track.artist || "Unknown Artist",
       album: track.album || "Unknown Album",
-      coverUri: track.rawCover || "",
+      coverUri: track.rawCover || track.cover || "",
       trackUri: track.rawContentUri || "",
       isPlaying: isPlaying,
       duration: track.duration || 0,
     }).catch((e) => console.warn("Native notification update failed:", e));
 
-    // Start position updates when playing
     this._startPositionUpdates();
   }
 
@@ -653,7 +726,6 @@ class AudioEngine {
     });
   }
 
-  // Event system
   on(event, callback) {
     if (!this._listeners[event]) this._listeners[event] = [];
     this._listeners[event].push(callback);

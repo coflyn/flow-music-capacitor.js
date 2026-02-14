@@ -1,11 +1,9 @@
-// ZPlayer Library — Music data layer
-// Supports both demo data (web) and scanned local files (Android)
 import tracksData from "../data/tracks.json";
 import { scanner } from "./scanner.js";
+import { audioEngine } from "./audioEngine.js";
 
 class Library {
   constructor() {
-    // Start with demo data
     this.tracks = tracksData.tracks || [];
     this.albums = tracksData.albums || [];
     this.artists = tracksData.artists || [];
@@ -13,6 +11,9 @@ class Library {
     this._playlists = this._loadPlaylists();
     this._recentlyPlayed = this._loadRecent();
     this._playCounts = this._loadPlayCounts();
+    this._playCounts = this._loadPlayCounts();
+    this._scannedFolders = this._loadScannedFolders();
+    this.autoScan = localStorage.getItem("flow_autoscan") !== "false";
     this._listeners = {};
     this._initialized = false;
   }
@@ -39,23 +40,45 @@ class Library {
       this.albums = cached.albums || [];
       this.artists = cached.artists || [];
       this._enrichAlbums();
+      this._enrichArtists();
       this._emit("updated", {
         tracks: this.tracks.length,
         albums: this.albums.length,
         artists: this.artists.length,
       });
+
+      if (this.autoScan) {
+        this.rescan().catch(() => {});
+      }
       return; // Use cached data, no re-scan needed
     }
 
     // No cache: perform a full scan
     try {
       const result = await scanner.scan();
-      if (result && result.tracks.length > 0) {
-        this.tracks = result.tracks;
-        this.albums = result.albums;
-        this.artists = result.artists;
+      let allTracks = result.tracks || [];
+      let allAlbums = result.albums || [];
+      let allArtists = result.artists || [];
+
+      // Scan custom folders
+      for (const folder of this._scannedFolders) {
+        try {
+          const folderResult = await scanner.scanFolder(folder.uri);
+          if (folderResult) {
+            this._mergeResults(folderResult, allTracks, allAlbums, allArtists);
+          }
+        } catch (e) {
+          console.warn(`Scan failed for folder ${folder.name}:`, e);
+        }
+      }
+
+      if (allTracks.length > 0) {
+        this.tracks = allTracks;
+        this.albums = allAlbums;
+        this.artists = allArtists;
         this._enrichAlbums();
-        this._saveCachedLibrary();
+        this._enrichArtists();
+        this._saveCachedLibrary(); // Logic consolidated inside
         this._emit("updated", {
           tracks: this.tracks.length,
           albums: this.albums.length,
@@ -82,6 +105,14 @@ class Library {
         const firstTrack = this.tracks.find((t) => t.albumId === album.id);
         if (firstTrack) album.artistId = firstTrack.artistId;
       }
+    });
+  }
+
+  _enrichArtists() {
+    this.artists.forEach((artist) => {
+      artist.numTracks = this.tracks.filter(
+        (t) => t.artistId === artist.id,
+      ).length;
     });
   }
 
@@ -118,19 +149,45 @@ class Library {
       const folder = await scanner.chooseFolder();
       if (!folder) return;
 
-      const result = await scanner.scanFolder(folder.folderUri);
-      if (result && result.tracks) {
-        this.tracks = result.tracks;
-        this.albums = result.albums;
-        this.artists = result.artists;
+      const path = folder.folderUri;
+
+      // Check for overlaps (subfolders or parent folders)
+      const existing = this._scannedFolders.find(
+        (f) => path.startsWith(f.uri) || f.uri.startsWith(path),
+      );
+      if (existing) {
+        if (existing.uri === path) {
+          this._emit("toast", { message: "Folder already added" });
+        } else {
+          this._emit("toast", {
+            message: "Folder overlaps with an existing one",
+          });
+        }
+        return;
+      }
+
+      this._scannedFolders.push({
+        uri: path,
+        name: folder.folderName || "Unknown Folder",
+      });
+      this._saveScannedFolders();
+
+      const result = await scanner.scanFolder(path);
+      if (result) {
+        this._mergeResults(result);
+
         this._enrichAlbums();
+        this._enrichArtists();
         this._saveCachedLibrary();
 
         this._emit("updated", {
           tracks: this.tracks.length,
           albums: this.albums.length,
           artists: this.artists.length,
-          folder: result.folder,
+        });
+
+        this._emit("toast", {
+          message: `Added ${result.tracks?.length || 0} songs`,
         });
       }
     } catch (err) {
@@ -138,19 +195,102 @@ class Library {
     }
   }
 
+  getScannedFolders() {
+    return this._scannedFolders;
+  }
+
+  removeScannedFolder(uri) {
+    this._scannedFolders = this._scannedFolders.filter((f) => f.uri !== uri);
+    this._saveScannedFolders();
+    this._emit("updated");
+  }
+
+  _loadScannedFolders() {
+    try {
+      return JSON.parse(localStorage.getItem("flow_scanned_folders")) || [];
+    } catch {
+      return [];
+    }
+  }
+
+  _saveScannedFolders() {
+    localStorage.setItem(
+      "flow_scanned_folders",
+      JSON.stringify(this._scannedFolders),
+    );
+  }
+
   /**
-   * Force rescan music from device
+   * Centralized merging logic to ensure tracks, albums, and artists are synced.
+   */
+  _mergeResults(
+    result,
+    targetTracks = this.tracks,
+    targetAlbums = this.albums,
+    targetArtists = this.artists,
+  ) {
+    if (!result) return;
+
+    // Merge tracks
+    if (result.tracks) {
+      result.tracks.forEach((t) => {
+        if (!targetTracks.find((ex) => ex.id === t.id)) {
+          targetTracks.push(t);
+        }
+      });
+    }
+
+    // Merge albums
+    if (result.albums) {
+      result.albums.forEach((a) => {
+        if (!targetAlbums.find((ex) => ex.id === a.id)) {
+          targetAlbums.push(a);
+        }
+      });
+    }
+
+    // Merge artists
+    if (result.artists) {
+      result.artists.forEach((ar) => {
+        if (!targetArtists.find((ex) => ex.id === ar.id)) {
+          targetArtists.push(ar);
+        }
+      });
+    }
+  }
+
+  /**
+   * Force rescan music from device with cache clear
    */
   async rescan() {
+    localStorage.removeItem("flow_library_cache");
+    localStorage.removeItem("zplayer_scan_cache");
     this._initialized = false;
     return this.init();
   }
 
-  // ========================
-  // Tracks
-  // ========================
+  setAutoScan(enabled) {
+    this.autoScan = enabled;
+    localStorage.setItem("flow_autoscan", enabled.toString());
+  }
+
+  clearMetadataCache() {
+    // Keep tracks but clear albums/artists to force rebuild?
+    // Or just a full rescan. Let's provide a clear toast feedback.
+    localStorage.removeItem("flow_library_cache");
+    localStorage.removeItem("zplayer_scan_cache");
+    this._emit("toast", { message: "Metadata cache cleared." });
+  }
+
   getAllTracks() {
-    return this.tracks;
+    return this._filterTracks(this.tracks);
+  }
+
+  _filterTracks(tracks) {
+    if (!audioEngine.avoidShortTracks) return tracks;
+    return tracks.filter(
+      (t) => (t.duration || 0) >= audioEngine.minTrackDuration,
+    );
   }
 
   getTrackById(id) {
@@ -199,6 +339,7 @@ class Library {
       }
 
       this._saveToLocal();
+      this._enrichArtists();
       this._emit("updated");
       return newTrack;
     }
@@ -241,9 +382,6 @@ class Library {
     return sorted;
   }
 
-  // ========================
-  // Albums
-  // ========================
   getAllAlbums() {
     return this.albums;
   }
@@ -256,9 +394,6 @@ class Library {
     return this.albums.filter((a) => a.artistId === artistId);
   }
 
-  // ========================
-  // Artists
-  // ========================
   getAllArtists() {
     return this.artists;
   }
@@ -267,9 +402,6 @@ class Library {
     return this.artists.find((a) => a.id === id);
   }
 
-  // ========================
-  // Search
-  // ========================
   search(query) {
     if (!query || query.trim().length === 0)
       return { tracks: [], albums: [], artists: [] };
@@ -296,9 +428,6 @@ class Library {
     return { tracks, albums, artists };
   }
 
-  // ========================
-  // Favorites
-  // ========================
   getFavorites() {
     return this._favorites;
   }
@@ -333,9 +462,6 @@ class Library {
     localStorage.setItem("zplayer_favorites", JSON.stringify(this._favorites));
   }
 
-  // ========================
-  // Playlists
-  // ========================
   getPlaylists() {
     return this._playlists;
   }
@@ -427,9 +553,6 @@ class Library {
     localStorage.setItem("zplayer_playlists", JSON.stringify(this._playlists));
   }
 
-  // ========================
-  // Recently Played
-  // ========================
   getRecentlyPlayed() {
     return this._recentlyPlayed
       .map((id) => this.getTrackById(id))
@@ -461,7 +584,6 @@ class Library {
     }
   }
 
-  // Smart Playlists
   getRecentlyAdded(limit = 20) {
     return [...this.tracks]
       .sort(
@@ -502,7 +624,6 @@ class Library {
     this._emit("updated");
   }
 
-  // Metadata Editor
   updateTrackMetadata(trackId, newData) {
     const trackIndex = this.tracks.findIndex((t) => t.id === trackId);
     if (trackIndex >= 0) {
@@ -520,7 +641,6 @@ class Library {
     );
   }
 
-  // Event system
   on(event, cb) {
     if (!this._listeners[event]) this._listeners[event] = [];
     this._listeners[event].push(cb);

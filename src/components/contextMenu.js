@@ -1,4 +1,3 @@
-// ZPlayer — Context Menu Component
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
@@ -6,23 +5,31 @@ import { store } from "../core/store.js";
 import { createElement } from "../core/utils.js";
 
 export function createContextMenu() {
-  const wrapper = createElement("div", "");
+  const wrapper = createElement("div", "context-menu-wrapper");
   wrapper.id = "context-menu-wrapper";
   wrapper.style.display = "none";
 
+  const hideContextMenu = () => {
+    wrapper.classList.add("closing");
+    setTimeout(() => {
+      wrapper.style.display = "none";
+      wrapper.classList.remove("closing");
+      wrapper.innerHTML = "";
+    }, 200);
+  };
+
   store.on("contextMenu", (ctx) => {
     if (ctx) {
-      showContextMenu(wrapper, ctx.track);
+      showContextMenu(wrapper, ctx.track, hideContextMenu);
     } else {
-      wrapper.style.display = "none";
-      wrapper.innerHTML = "";
+      hideContextMenu();
     }
   });
 
   return wrapper;
 }
 
-function showContextMenu(wrapper, track) {
+function showContextMenu(wrapper, track, hideContextMenu) {
   const isFav = musicLibrary.isFavorite(track.id);
   const playlists = musicLibrary.getPlaylists();
 
@@ -81,14 +88,12 @@ function showContextMenu(wrapper, track) {
     </div>
   `;
 
-  // Close on overlay click
   wrapper
     .querySelector(".context-menu-overlay")
     .addEventListener("click", () => {
-      store.set("contextMenu", null);
+      hideContextMenu();
     });
 
-  // Like
   wrapper
     .querySelector('[data-action="like"]')
     .addEventListener("click", () => {
@@ -99,7 +104,6 @@ function showContextMenu(wrapper, track) {
       store.set("contextMenu", null);
     });
 
-  // Add to Queue
   wrapper
     .querySelector('[data-action="queue"]')
     .addEventListener("click", () => {
@@ -108,7 +112,6 @@ function showContextMenu(wrapper, track) {
       store.set("contextMenu", null);
     });
 
-  // Add to Playlist
   wrapper
     .querySelector('[data-action="add-playlist"]')
     .addEventListener("click", () => {
@@ -116,7 +119,6 @@ function showContextMenu(wrapper, track) {
       showAddToPlaylistMenu(wrapper, track);
     });
 
-  // Go to Album
   wrapper
     .querySelector('[data-action="go-album"]')
     .addEventListener("click", () => {
@@ -125,7 +127,6 @@ function showContextMenu(wrapper, track) {
       window.location.hash = `#/album/${track.albumId}`;
     });
 
-  // Go to Artist
   wrapper
     .querySelector('[data-action="go-artist"]')
     .addEventListener("click", () => {
@@ -134,21 +135,18 @@ function showContextMenu(wrapper, track) {
       window.location.hash = `#/artist/${track.artistId}`;
     });
 
-  // Sleep Timer
   wrapper
     .querySelector('[data-action="sleep-timer"]')
     .addEventListener("click", () => {
       showSleepTimerMenu(wrapper);
     });
 
-  // Crossfade
   wrapper
     .querySelector('[data-action="crossfade"]')
     .addEventListener("click", () => {
       showCrossfadeMenu(wrapper);
     });
 
-  // Stop after current
   wrapper
     .querySelector('[data-action="stop-after"]')
     .addEventListener("click", () => {
@@ -163,13 +161,11 @@ function showContextMenu(wrapper, track) {
       });
     });
 
-  // Equalizer
   wrapper.querySelector('[data-action="eq"]').addEventListener("click", () => {
     store.set("eqOpen", true);
     store.set("contextMenu", null);
   });
 
-  // Edit Info
   wrapper
     .querySelector('[data-action="edit"]')
     .addEventListener("click", () => {
@@ -298,15 +294,13 @@ function showAddToPlaylistMenu(wrapper, track) {
   wrapper
     .querySelector(".context-menu-overlay")
     .addEventListener("click", () => {
-      wrapper.style.display = "none";
-      wrapper.innerHTML = "";
+      hideContextMenu();
     });
 
   wrapper
     .querySelector('[data-action="new-playlist"]')
     .addEventListener("click", () => {
-      wrapper.style.display = "none";
-      wrapper.innerHTML = "";
+      hideContextMenu();
       store.set("modal", {
         type: "create-playlist",
         data: { trackToAdd: track.id },
@@ -319,8 +313,7 @@ function showAddToPlaylistMenu(wrapper, track) {
       btn.addEventListener("click", () => {
         const added = musicLibrary.addTrackToPlaylist(pl.id, track.id);
         store.showToast(added ? `Added to ${pl.name}` : "Already in playlist");
-        wrapper.style.display = "none";
-        wrapper.innerHTML = "";
+        hideContextMenu();
       });
     }
   });

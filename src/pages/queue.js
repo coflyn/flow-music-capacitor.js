@@ -1,4 +1,3 @@
-// ZPlayer — Queue Page
 import { icons } from "../core/icons.js";
 import { audioEngine } from "../core/audioEngine.js";
 import { queueManager } from "../core/queue.js";
@@ -12,7 +11,7 @@ export function renderQueue(container) {
 
   page.innerHTML = `
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-6);">
-      <h1 class="section-title" style="font-size: var(--fs-2xl);">Queue</h1>
+      <h1 class="page-title">Queue</h1>
       <button class="btn btn-secondary" id="clear-queue-btn" style="font-size: var(--fs-sm); display: none;">Clear</button>
     </div>
     <div id="queue-content"></div>
@@ -20,16 +19,13 @@ export function renderQueue(container) {
 
   container.appendChild(page);
 
-  // Reactive updates
   const updateQueueUI = () => {
     if (!document.body.contains(page)) {
-      // Cleanup listeners if page is gone
       queueManager.off("queuechange", updateQueueUI);
       queueManager.off("trackchange", updateQueueUI);
       audioEngine.off("shufflechange", updateQueueUI);
       return;
     }
-    // Re-render content only
     const content = page.querySelector("#queue-content");
     if (content) renderQueueContent(content);
 
@@ -46,13 +42,11 @@ export function renderQueue(container) {
   audioEngine.on("shufflechange", updateQueueUI);
   musicLibrary.on("updated", updateQueueUI);
 
-  // Clear queue button
   page.querySelector("#clear-queue-btn").addEventListener("click", () => {
     queueManager.clearUpcoming();
     updateQueueUI();
   });
 
-  // Initial render
   updateQueueUI();
 }
 
@@ -62,7 +56,6 @@ function renderQueueContent(contentEl) {
   const current = queueManager.getCurrentTrack();
   const upcoming = queueManager.getUpcoming();
 
-  // Empty state
   if (!current && upcoming.length === 0) {
     contentEl.innerHTML = `
       <div style="text-align: center; padding: var(--sp-10) 0; color: var(--text-tertiary);">
@@ -74,7 +67,6 @@ function renderQueueContent(contentEl) {
     return;
   }
 
-  // Now Playing
   if (current) {
     const nowSection = createElement("div", "");
     nowSection.innerHTML = `<h3 style="font-size: var(--fs-sm); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: var(--sp-3);">Now Playing</h3>`;
@@ -83,7 +75,6 @@ function renderQueueContent(contentEl) {
     contentEl.appendChild(nowSection);
   }
 
-  // Up Next
   if (upcoming.length > 0) {
     const nextSection = createElement("div", "");
     nextSection.style.marginTop = "var(--sp-6)";
@@ -149,7 +140,6 @@ function createQueueItem(track, queueIndex, isCurrent) {
     }
   });
 
-  // Remove from queue
   const removeBtn = item.querySelector('[data-action="remove"]');
   if (removeBtn) {
     removeBtn.addEventListener("click", (e) => {

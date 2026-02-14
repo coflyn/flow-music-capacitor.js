@@ -1,4 +1,3 @@
-// ZPlayer — Playlist Detail Page
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
@@ -49,7 +48,7 @@ export function renderPlaylist(container, params) {
         tracks.length > 0
           ? `
         <button class="action-btn-play" id="play-playlist">${icons.play}</button>
-        <button class="action-btn" id="shuffle-playlist">${icons.shuffle}</button>
+        <button class="action-btn" id="shuffle-playlist">Shuffle</button>
       `
           : ""
       }
@@ -64,14 +63,12 @@ export function renderPlaylist(container, params) {
 
   container.appendChild(page);
 
-  // Cover change — pick from track covers
   page
     .querySelector("#playlist-cover-wrapper")
     .addEventListener("click", () => {
       showCoverPicker(playlist, tracks);
     });
 
-  // Play all
   const playBtn = page.querySelector("#play-playlist");
   if (playBtn) {
     playBtn.addEventListener("click", () => {
@@ -80,7 +77,6 @@ export function renderPlaylist(container, params) {
     });
   }
 
-  // Shuffle
   const shuffleBtn = page.querySelector("#shuffle-playlist");
   if (shuffleBtn) {
     shuffleBtn.addEventListener("click", () => {
@@ -89,7 +85,6 @@ export function renderPlaylist(container, params) {
     });
   }
 
-  // Rename
   page.querySelector("#rename-playlist").addEventListener("click", () => {
     store.set("modal", {
       type: "rename-playlist",
@@ -97,14 +92,12 @@ export function renderPlaylist(container, params) {
     });
   });
 
-  // Delete
   page.querySelector("#delete-playlist").addEventListener("click", () => {
     musicLibrary.deletePlaylist(playlist.id);
     store.showToast(`Deleted "${playlist.name}"`);
     window.location.hash = "#/library";
   });
 
-  // Tracks
   if (tracks.length > 0) {
     renderTrackList(tracks, page.querySelector("#playlist-tracks"));
   } else {
@@ -119,12 +112,10 @@ export function renderPlaylist(container, params) {
 }
 
 function showCoverPicker(playlist, tracks) {
-  // Collect unique covers from all tracks in library
   const allTracks = musicLibrary.getAllTracks();
   const covers = [];
   const seen = new Set();
 
-  // Add current playlist track covers first
   tracks.forEach((t) => {
     if (t.cover && !seen.has(t.cover)) {
       seen.add(t.cover);
@@ -132,7 +123,6 @@ function showCoverPicker(playlist, tracks) {
     }
   });
 
-  // Then add other covers from library
   allTracks.forEach((t) => {
     if (t.cover && !seen.has(t.cover)) {
       seen.add(t.cover);
@@ -145,7 +135,6 @@ function showCoverPicker(playlist, tracks) {
     return;
   }
 
-  // Show cover picker modal
   const wrapper = document.getElementById("modal-wrapper");
   if (!wrapper) return;
 
@@ -170,7 +159,6 @@ function showCoverPicker(playlist, tracks) {
     </div>
   `;
 
-  // Close on overlay
   wrapper.querySelector(".modal-overlay").addEventListener("click", (e) => {
     if (e.target.classList.contains("modal-overlay")) {
       wrapper.style.display = "none";
@@ -178,7 +166,6 @@ function showCoverPicker(playlist, tracks) {
     }
   });
 
-  // Select cover
   wrapper.querySelectorAll(".cover-picker-item").forEach((item) => {
     item.addEventListener("click", () => {
       const idx = parseInt(item.dataset.idx);
@@ -187,7 +174,6 @@ function showCoverPicker(playlist, tracks) {
       store.showToast("Cover updated! 🎨");
       wrapper.style.display = "none";
       wrapper.innerHTML = "";
-      // Re-render playlist page
       const container = document.getElementById("main-content");
       if (container) renderPlaylist(container, { id: playlist.id });
     });
