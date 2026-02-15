@@ -12,8 +12,9 @@ class QueueManager {
     audioEngine.on("next", () => this.playNext());
     audioEngine.on("prev", () => this.playPrev());
     audioEngine.on("transition", () => {
+      const nextTrack = this.getCurrentTrack();
       console.log(
-        `Transitioning queue: ${this.currentIndex} -> ${this.currentIndex + 1}`,
+        `Transitioning to: ${nextTrack ? nextTrack.title : "unknown"} (Index: ${this.currentIndex})`,
       );
       if (this.currentIndex < this.queue.length - 1) {
         this.currentIndex++;
@@ -53,6 +54,47 @@ class QueueManager {
     this.queue.push(track);
     this.originalQueue.push(track);
     this._emit("queuechange");
+  }
+
+  insertNext(track) {
+    const current = this.getCurrentTrack();
+    if (current && current.id === track.id) return;
+
+    const existingIdx = this.queue.findIndex((t) => t.id === track.id);
+    if (existingIdx >= 0) {
+      this.queue.splice(existingIdx, 1);
+      if (existingIdx < this.currentIndex) {
+        this.currentIndex--;
+      }
+    }
+
+    this.queue.splice(this.currentIndex + 1, 0, track);
+    this._emit("queuechange");
+    this._syncPreload();
+  }
+
+  reorderQueue(fromIndex, toIndex) {
+    if (fromIndex < 0 || fromIndex >= this.queue.length) return;
+    if (toIndex < 0 || toIndex >= this.queue.length) return;
+
+    const [movedItem] = this.queue.splice(fromIndex, 1);
+    this.queue.splice(toIndex, 0, movedItem);
+
+    if (this.currentIndex === fromIndex) {
+      this.currentIndex = toIndex;
+    } else {
+      if (fromIndex < this.currentIndex && toIndex >= this.currentIndex) {
+        this.currentIndex--;
+      } else if (
+        fromIndex > this.currentIndex &&
+        toIndex <= this.currentIndex
+      ) {
+        this.currentIndex++;
+      }
+    }
+
+    this._emit("queuechange");
+    this._syncPreload();
   }
 
   removeFromQueue(index) {

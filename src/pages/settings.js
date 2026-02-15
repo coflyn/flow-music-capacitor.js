@@ -89,11 +89,11 @@ export function renderSettings(container) {
           <div class="setting-content">
             <span class="setting-title">Accent Color</span>
             <div class="color-swatches" style="margin-top: 8px;">
-               <div class="swatch" style="--swatch: #1db954" data-color="#1db954"></div>
-               <div class="swatch" style="--swatch: #2E86DE" data-color="#2E86DE"></div>
-               <div class="swatch" style="--swatch: #A55EEA" data-color="#A55EEA"></div>
-               <div class="swatch" style="--swatch: #FA8231" data-color="#FA8231"></div>
-               <div class="swatch" style="--swatch: #EB3B5A" data-color="#EB3B5A"></div>
+               <div class="swatch ${audioEngine.accentColor === "#1db954" ? "active" : ""}" style="--swatch: #1db954" data-color="#1db954"></div>
+               <div class="swatch ${audioEngine.accentColor === "#2E86DE" ? "active" : ""}" style="--swatch: #2E86DE" data-color="#2E86DE"></div>
+               <div class="swatch ${audioEngine.accentColor === "#A55EEA" ? "active" : ""}" style="--swatch: #A55EEA" data-color="#A55EEA"></div>
+               <div class="swatch ${audioEngine.accentColor === "#FA8231" ? "active" : ""}" style="--swatch: #FA8231" data-color="#FA8231"></div>
+               <div class="swatch ${audioEngine.accentColor === "#EB3B5A" ? "active" : ""}" style="--swatch: #EB3B5A" data-color="#EB3B5A"></div>
             </div>
           </div>
         </div>
@@ -327,13 +327,15 @@ export function renderSettings(container) {
     ["click", "touchstart"].forEach((ev) => {
       resetBtn.addEventListener(ev, (e) => {
         e.stopPropagation();
-        if (ev === "click") {
-          haptics.medium();
-          localStorage.removeItem("flow_custom_bg");
-          document.body.style.backgroundImage = "";
-          document.querySelectorAll(".bg-overlay").forEach((ov) => ov.remove());
-          store.showToast("Background reset");
-        }
+        e.preventDefault();
+        haptics.medium();
+        localStorage.removeItem("flow_custom_bg");
+        document.body.style.backgroundImage = "";
+
+        const overlay = document.getElementById("bg-overlay");
+        if (overlay) overlay.remove();
+
+        store.showToast("Background reset");
       });
     });
   }
@@ -342,6 +344,12 @@ export function renderSettings(container) {
     swatch.addEventListener("click", () => {
       haptics.light();
       const color = swatch.dataset.color;
+
+      page
+        .querySelectorAll(".swatch")
+        .forEach((s) => s.classList.remove("active"));
+      swatch.classList.add("active");
+
       document.documentElement.style.setProperty("--accent", color);
       document.documentElement.style.setProperty("--accent-hover", color);
 
@@ -381,6 +389,12 @@ export function renderSettings(container) {
         timerStatus.textContent = `${txt}`;
         timerStatus.style.color = "var(--accent)";
       }
+
+      const currentMin = Math.round(remaining / 60000);
+      page.querySelectorAll(".timer-chip").forEach((c) => {
+        const chipMin = parseInt(c.dataset.min);
+        c.classList.toggle("active", chipMin === currentMin);
+      });
     }
   };
   audioEngine.on("sleeptimer", updateTimerDisplay);
@@ -422,6 +436,12 @@ export function renderSettings(container) {
           "flow_accent_color",
           "flow_custom_bg",
           "flow_haptic_intensity",
+          "flow_eq_gains",
+          "flow_library_cache",
+          "zplayer_scan_cache",
+          "zplayer_recent",
+          "zplayer_favorites",
+          "zplayer_playlists",
         ].forEach((k) => localStorage.removeItem(k));
         audioEngine.setMonoMode(false);
         audioEngine.setCrossfade(0);

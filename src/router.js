@@ -31,6 +31,14 @@ class Router {
       this.params = {};
       this.currentRoute = hash;
       store.set("currentView", hash);
+
+      const main = document.getElementById("main-content");
+      if (main) {
+        main.classList.remove("view-enter");
+        void main.offsetWidth;
+        main.classList.add("view-enter");
+      }
+
       this.routes[hash](this.params);
       return;
     }
@@ -56,6 +64,14 @@ class Router {
         this.params = params;
         this.currentRoute = hash;
         store.set("currentView", hash);
+
+        const main = document.getElementById("main-content");
+        if (main) {
+          main.classList.remove("view-enter");
+          void main.offsetWidth;
+          main.classList.add("view-enter");
+        }
+
         handler(params);
         return;
       }

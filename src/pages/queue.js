@@ -4,6 +4,7 @@ import { queueManager } from "../core/queue.js";
 import { musicLibrary } from "../core/library.js";
 import { store } from "../core/store.js";
 import { createElement, formatTime } from "../core/utils.js";
+import { haptics } from "../core/haptics.js";
 
 export function renderQueue(container) {
   container.innerHTML = "";
@@ -96,8 +97,10 @@ function createQueueItem(track, queueIndex, isCurrent) {
   item.innerHTML = `
     <div class="track-number-col">
       ${
-        isCurrent && audioEngine.isPlaying
-          ? `
+        !isCurrent
+          ? `<div class="drag-handle">${icons.dragHandle || '<svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px;"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>'}</div>`
+          : isCurrent && audioEngine.isPlaying
+            ? `
         <div class="eq-bars">
           <div class="eq-bar"></div>
           <div class="eq-bar"></div>
@@ -105,7 +108,7 @@ function createQueueItem(track, queueIndex, isCurrent) {
           <div class="eq-bar"></div>
         </div>
       `
-          : `
+            : `
         <span class="track-play-icon" style="visibility: visible;">${icons.play}</span>
       `
       }
@@ -145,6 +148,84 @@ function createQueueItem(track, queueIndex, isCurrent) {
       e.stopPropagation();
       queueManager.removeFromQueue(queueIndex);
     });
+  }
+
+  if (!isCurrent) {
+    const handle = item.querySelector(".drag-handle");
+    let initialY = 0;
+    let currentY = 0;
+    let draggedIndex = queueIndex;
+
+    const onTouchStart = (e) => {
+      initialY = e.touches[0].clientY;
+      item.classList.add("dragging");
+      item.style.transition = "none";
+      document.body.style.overflow = "hidden";
+    };
+
+    const onTouchMove = (e) => {
+      currentY = e.touches[0].clientY;
+      const deltaY = currentY - initialY;
+      item.style.transform = `translateY(${deltaY}px)`;
+
+      const siblings = Array.from(item.parentNode.children).filter(
+        (el) => el !== item && el.classList.contains("track-item"),
+      );
+      const nextSibling = siblings.find((sib) => {
+        const rect = sib.getBoundingClientRect();
+        return currentY < rect.top + rect.height / 2;
+      });
+
+      siblings.forEach((s) =>
+        s.classList.remove("drag-over-top", "drag-over-bottom"),
+      );
+      if (nextSibling) {
+        nextSibling.classList.add("drag-over-top");
+      } else if (siblings.length > 0) {
+        siblings[siblings.length - 1].classList.add("drag-over-bottom");
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      item.classList.remove("dragging");
+      item.style.transform = "";
+      item.style.transition = "";
+      document.body.style.overflow = "";
+
+      const siblings = Array.from(item.parentNode.children).filter((el) =>
+        el.classList.contains("track-item"),
+      );
+
+      const currentPosInSiblings = siblings.indexOf(item);
+      const finalIndexInCurrentList = siblings.findIndex((sib) => {
+        if (sib === item) return false;
+        const rect = sib.getBoundingClientRect();
+        return currentY < rect.top + rect.height / 2;
+      });
+
+      siblings.forEach((s) =>
+        s.classList.remove("drag-over-top", "drag-over-bottom"),
+      );
+
+      let toIndex;
+      if (finalIndexInCurrentList === -1) {
+        toIndex = queueManager.currentIndex + siblings.length - 1;
+      } else {
+        toIndex = queueManager.currentIndex + 1 + finalIndexInCurrentList;
+        if (currentPosInSiblings < finalIndexInCurrentList) {
+          toIndex--;
+        }
+      }
+
+      if (toIndex !== queueIndex) {
+        haptics.light();
+        queueManager.reorderQueue(queueIndex, toIndex);
+      }
+    };
+
+    handle.addEventListener("touchstart", onTouchStart, { passive: true });
+    handle.addEventListener("touchmove", onTouchMove, { passive: true });
+    handle.addEventListener("touchend", onTouchEnd);
   }
 
   return item;

@@ -5,6 +5,7 @@ import { audioEngine } from "../core/audioEngine.js";
 import { router } from "../router.js";
 import { store } from "../core/store.js";
 import { createElement, cleanTitle } from "../core/utils.js";
+import { haptics } from "../core/haptics.js";
 import { renderTrackList } from "../components/trackList.js";
 
 export function renderLibrary(container) {
@@ -49,6 +50,7 @@ export function renderLibrary(container) {
 
   const refreshBtn = page.querySelector("#refresh-library-btn");
   refreshBtn.addEventListener("click", async () => {
+    haptics.medium();
     refreshBtn.classList.add("spinning");
     await musicLibrary.pickAndScanFolder();
     refreshBtn.classList.remove("spinning");
@@ -71,6 +73,7 @@ export function renderLibrary(container) {
   tabsEl.addEventListener("click", (e) => {
     const tab = e.target.closest(".tab");
     if (!tab) return;
+    haptics.light();
 
     tabsEl
       .querySelectorAll(".tab")
@@ -134,7 +137,13 @@ export function renderLibrary(container) {
   });
 
   controlsEl.style.display = "block";
-  renderTab(contentEl, "songs", { currentFilter, currentSort });
+
+  const isActuallyEmpty = !localStorage.getItem("flow_library_cache");
+  if (isActuallyEmpty && musicLibrary.getAllTracks().length === 0) {
+    renderSkeletonLibrary(contentEl);
+  } else {
+    renderTab(contentEl, "songs", { currentFilter, currentSort });
+  }
 
   const updateActiveState = () => {
     const currentTrack = queueManager.getCurrentTrack();
@@ -430,4 +439,23 @@ function showEmpty(container, title, text) {
     <div class="empty-state-text">${text}</div>
   `;
   container.appendChild(empty);
+}
+function renderSkeletonLibrary(container) {
+  container.innerHTML = `
+    <div style="padding: var(--sp-2);">
+      ${[1, 2, 3, 4, 5, 6, 7, 8]
+        .map(
+          () => `
+        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 20px;">
+          <div class="skeleton" style="width: 50px; height: 50px; border-radius: 8px;"></div>
+          <div style="flex: 1;">
+            <div class="skeleton" style="height: 14px; width: 60%; margin-bottom: 8px;"></div>
+            <div class="skeleton" style="height: 10px; width: 40%;"></div>
+          </div>
+        </div>
+      `,
+        )
+        .join("")}
+    </div>
+  `;
 }

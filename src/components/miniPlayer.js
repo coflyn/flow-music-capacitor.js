@@ -14,7 +14,10 @@ export function createMiniPlayer() {
     <div class="mini-player-progress" id="mini-progress" style="width: 0%"></div>
     <img class="mini-player-art" id="mini-art" src="" alt="">
     <div class="mini-player-info">
-      <div class="mini-player-title" id="mini-title">Not Playing</div>
+      <div class="mini-player-title-row">
+        <div class="mini-player-title" id="mini-title">Not Playing</div>
+        <div class="mini-player-timer hidden" id="mini-timer"></div>
+      </div>
       <div class="mini-player-artist" id="mini-artist"></div>
     </div>
     <div class="mini-player-controls">
@@ -66,6 +69,21 @@ export function createMiniPlayer() {
     if (duration > 0) {
       const pct = (currentTime / duration) * 100;
       el.querySelector("#mini-progress").style.width = pct + "%";
+    }
+  });
+
+  audioEngine.on("sleeptimer", ({ remaining }) => {
+    const timerEl = el.querySelector("#mini-timer");
+    if (!timerEl) return;
+
+    if (remaining > 0) {
+      const totalSec = Math.ceil(remaining / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+      timerEl.classList.remove("hidden");
+    } else {
+      timerEl.classList.add("hidden");
     }
   });
 

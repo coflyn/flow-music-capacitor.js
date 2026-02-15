@@ -3,6 +3,7 @@ import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
 import { store } from "../core/store.js";
 import { createElement } from "../core/utils.js";
+import { audioEngine } from "../core/audioEngine.js";
 
 export function createContextMenu() {
   const wrapper = createElement("div", "context-menu-wrapper");
@@ -52,6 +53,10 @@ function showContextMenu(wrapper, track, hideContextMenu) {
         ${icons.queue}
         <span>Add to Queue</span>
       </button>
+      <button class="context-menu-item" data-action="play-next">
+        ${icons.playNext}
+        <span>Play Next</span>
+      </button>
       <button class="context-menu-item" data-action="add-playlist">
         ${icons.addPlaylist}
         <span>Add to Playlist</span>
@@ -66,7 +71,7 @@ function showContextMenu(wrapper, track, hideContextMenu) {
       </button>
       <div style="height: 1px; background: var(--border); margin: 8px 16px;"></div>
       <button class="context-menu-item" data-action="sleep-timer">
-        <svg viewBox="0 0 24 24" fill="currentColor" style="width:22px;height:22px;"><path d="M12 2c5.52 0 10 4.48 10 10s-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2zm0 18c4.41 0 8-3.59 8-8s-3.59-8-8-8-8 3.59-8 8 3.59 8 8 8zm.5-13H11v6l5.2 3.1.8-1.2-4.5-2.7V7z"/></svg>
+        ${icons.timer || icons.clock}
         <span>Sleep Timer</span>
       </button>
       <button class="context-menu-item" data-action="crossfade">
@@ -113,6 +118,14 @@ function showContextMenu(wrapper, track, hideContextMenu) {
     });
 
   wrapper
+    .querySelector('[data-action="play-next"]')
+    .addEventListener("click", () => {
+      queueManager.insertNext(track);
+      store.showToast("Will play next ⏭️");
+      store.set("contextMenu", null);
+    });
+
+  wrapper
     .querySelector('[data-action="add-playlist"]')
     .addEventListener("click", () => {
       store.set("contextMenu", null);
@@ -150,15 +163,13 @@ function showContextMenu(wrapper, track, hideContextMenu) {
   wrapper
     .querySelector('[data-action="stop-after"]')
     .addEventListener("click", () => {
-      import("../core/audioEngine.js").then(({ audioEngine }) => {
-        const enabled = audioEngine.toggleStopAfterCurrent();
-        store.showToast(
-          enabled
-            ? "Will stop after this track ⏹️"
-            : "Playback will continue normally",
-        );
-        store.set("contextMenu", null);
-      });
+      const enabled = audioEngine.toggleStopAfterCurrent();
+      store.showToast(
+        enabled
+          ? "Will stop after this track ⏹️"
+          : "Playback will continue normally",
+      );
+      store.set("contextMenu", null);
     });
 
   wrapper.querySelector('[data-action="eq"]').addEventListener("click", () => {
@@ -205,8 +216,6 @@ async function showCrossfadeMenu(wrapper) {
       store.set("contextMenu", null);
     });
 
-  const { audioEngine } = await import("../core/audioEngine.js");
-
   wrapper.querySelectorAll("[data-fade]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const secs = parseInt(btn.dataset.fade);
@@ -232,6 +241,7 @@ async function showSleepTimerMenu(wrapper) {
         </div>
       </div>
       <button class="context-menu-item" data-timer="0"><span>Off</span></button>
+      <button class="context-menu-item" data-timer="1"><span>1 Minute (Test)</span></button>
       <button class="context-menu-item" data-timer="5"><span>5 Minutes</span></button>
       <button class="context-menu-item" data-timer="15"><span>15 Minutes</span></button>
       <button class="context-menu-item" data-timer="30"><span>30 Minutes</span></button>
@@ -246,12 +256,10 @@ async function showSleepTimerMenu(wrapper) {
       store.set("contextMenu", null);
     });
 
-  const { audioEngine } = await import("../core/audioEngine.js");
-
   wrapper.querySelectorAll("[data-timer]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const mins = parseInt(btn.dataset.timer);
-      audioEngine.setSleepTimer(mins);
+      audioEngine.startSleepTimer(mins);
       if (mins > 0) {
         store.showToast(`Sleep timer set for ${mins} minutes 💤`);
       } else {

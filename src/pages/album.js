@@ -1,6 +1,7 @@
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
+import { audioEngine } from "../core/audioEngine.js";
 import { router } from "../router.js";
 import { createElement, formatTime } from "../core/utils.js";
 import { renderTrackList } from "../components/trackList.js";
@@ -16,7 +17,7 @@ export function renderAlbum(container, params) {
 
   const tracks = musicLibrary.getTracksByAlbum(album.id);
   const totalDuration = tracks.reduce((sum, t) => sum + t.duration, 0);
-  const page = createElement("div", "page");
+  const page = createElement("div", "page album-page");
 
   page.innerHTML = `
     <div class="page-header">
@@ -28,7 +29,7 @@ export function renderAlbum(container, params) {
         <div class="page-header-meta">
           <span style="cursor: pointer;" data-artist-link="${album.artistId}">${album.artist}</span>
           <span class="page-header-dot"></span>
-          <span>${album.year}</span>
+          <span>${album.year || ""}</span>
           <span class="page-header-dot"></span>
           <span>${tracks.length} songs, ${formatTime(totalDuration)}</span>
         </div>
@@ -37,7 +38,7 @@ export function renderAlbum(container, params) {
 
     <div class="action-bar">
       <button class="action-btn-play" id="play-album">${icons.play}</button>
-      <button class="action-btn" id="shuffle-album">Shuffle</button>
+      <button class="action-btn" id="shuffle-album">${icons.shuffle}</button>
     </div>
 
     <div id="album-tracks"></div>
@@ -58,8 +59,11 @@ export function renderAlbum(container, params) {
   });
 
   page.querySelector("#shuffle-album").addEventListener("click", () => {
-    queueManager.playAll(tracks, 0);
-    queueManager.toggleShuffle();
+    if (!audioEngine.shuffleMode) {
+      queueManager.toggleShuffle();
+    }
+    const randomIndex = Math.floor(Math.random() * tracks.length);
+    queueManager.playAll(tracks, randomIndex);
   });
 
   renderTrackList(tracks, page.querySelector("#album-tracks"));

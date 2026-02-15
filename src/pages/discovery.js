@@ -2,7 +2,12 @@ import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
 import { router } from "../router.js";
-import { createElement, cleanTitle } from "../core/utils.js";
+import {
+  createElement,
+  cleanTitle,
+  getDominantColor,
+  rgbToHex,
+} from "../core/utils.js";
 import { renderTrackList } from "../components/trackList.js";
 
 export function renderDiscovery(container) {
@@ -126,6 +131,20 @@ export function renderDiscovery(container) {
     luckyDipBtn.addEventListener("click", () => {
       router.navigate(`#/album/${randomAlbum.id}`);
     });
+
+    if (randomAlbum.cover) {
+      getDominantColor(randomAlbum.cover).then((color) => {
+        const hex = rgbToHex(color.r, color.g, color.b);
+        const card = page.querySelector(".lucky-dip-card");
+        if (card) {
+          card.style.setProperty("--dip-accent", hex);
+          card.style.setProperty(
+            "--dip-accent-rgb",
+            `${color.r}, ${color.g}, ${color.b}`,
+          );
+        }
+      });
+    }
   }
 }
 
@@ -202,8 +221,8 @@ function renderLuckyDip(album) {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          background: rgba(var(--accent-rgb), 0.2);
-          color: var(--accent);
+          background: rgba(var(--dip-accent-rgb, var(--accent-rgb)), 0.2);
+          color: var(--dip-accent, var(--accent));
           padding: 6px 14px;
           border-radius: 50px;
           font-size: 10px;
@@ -212,7 +231,7 @@ function renderLuckyDip(album) {
           letter-spacing: 0.1em;
           margin-bottom: var(--sp-4);
           backdrop-filter: blur(10px);
-          border: 1px solid rgba(var(--accent-rgb), 0.3);
+          border: 1px solid rgba(var(--dip-accent-rgb, var(--accent-rgb)), 0.3);
         }
 
         .lucky-dip-title {
@@ -250,14 +269,14 @@ function renderLuckyDip(album) {
           right: -15px;
           width: 60px;
           height: 60px;
-          background: var(--accent);
+          background: var(--dip-accent, var(--accent));
           color: #000;
           border: none;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 8px 25px rgba(var(--accent-rgb), 0.5);
+          box-shadow: 0 8px 25px rgba(var(--dip-accent-rgb, var(--accent-rgb)), 0.5);
           cursor: pointer;
           transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }

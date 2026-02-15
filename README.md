@@ -4,25 +4,28 @@ Flow is a premium, high-performance music player built with Capacitor and Vite. 
 
 ## ✨ Features
 
-- **Premium UI**: Modern glassmorphism design with dynamic accent colors and fluid animations.
+- **Premium UI & UX**:
+  - Modern glassmorphism design with dynamic accent colors.
+  - **Smooth Page Transitions**: Slide and fade animations for a seamless feel.
+  - **Skeleton Loaders**: Polished loading states for improved perceived performance.
+  - **Swipe Gestures**: Swipe down to close the Now Playing screen.
 - **Advanced Audio Engine**:
   - Gapless playback and crossfading (0-12s).
   - 5-band parametric equalizer with makeup gain.
-  - Mono audio downmixing support.
-  - "Avoid Short Tracks" filtering for a cleaner library.
-- **Smart Library**:
-  - Blazing fast local storage scanning.
-  - Real-time active state updates.
-  - Metadata editor for fixing track information.
+  - Mono audio downmixing and "Avoid Short Tracks" filtering.
+- **Queue & Library**:
+  - **Drag & Drop Reordering**: Natural touch-based reordering in the queue.
+  - **Play Next**: Context menu option to jump tracks to the top of the queue.
+  - Blazing fast local scanning with metadata editing.
   - Artist and Album automatic grouping.
 - **Now Playing**:
   - Dynamic background colors based on album art.
   - Real-time progress and seek controls.
-  - Haptic feedback for interactions.
+  - Tactile haptic feedback on all major interactions.
 - **Customization**:
-  - Custom background images.
+  - Custom background images (Gallery pick).
   - Multiple accent color presets.
-  - Sleep timer.
+  - Adjustable sleep timer with real-time countdown.
 
 ## 🚀 Getting Started
 

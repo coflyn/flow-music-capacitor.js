@@ -26,7 +26,10 @@ class AudioEngine {
 
     this.crossfadeDuration =
       parseFloat(localStorage.getItem("flow_crossfade")) || 1.5;
+    this.accentColor = localStorage.getItem("flow_accent_color") || "#1db954";
     this.sleepTimer = null;
+    this.sleepTimerRemaining = 0;
+    this._sleepInterval = null;
     this.stopAfterCurrent = false;
 
     this.pauseOnDisconnect =
@@ -56,6 +59,16 @@ class AudioEngine {
     this._setupAudioEvents(this.audioB);
     this._setupMediaSession();
     this._setupNativeListener();
+
+    const resumeOnInteraction = () => {
+      if (this.audioCtx && this.audioCtx.state === "suspended") {
+        this.audioCtx.resume();
+      }
+      window.removeEventListener("touchstart", resumeOnInteraction);
+      window.removeEventListener("mousedown", resumeOnInteraction);
+    };
+    window.addEventListener("touchstart", resumeOnInteraction);
+    window.addEventListener("mousedown", resumeOnInteraction);
 
     setTimeout(() => {
       this._loadEQSettings();
@@ -182,7 +195,7 @@ class AudioEngine {
       ) {
         const remaining = this.duration - this.currentTime;
         const triggerPoint = Math.max(0.1, this.crossfadeDuration);
-        if (remaining <= triggerPoint) {
+        if (remaining <= triggerPoint && this.repeatMode !== "one") {
           this._startTransition();
         }
       }
@@ -198,13 +211,14 @@ class AudioEngine {
     });
 
     player.addEventListener("ended", () => {
-      if (
-        player !== this.activePlayer ||
-        this.isCrossfading ||
-        this._changingTrack
-      ) {
-        return;
+      if (player !== this.activePlayer) return;
+
+      if (this.isCrossfading || this._changingTrack) {
+        console.warn("Ended fired while state was busy. Forcing reset.");
+        this.isCrossfading = false;
+        this._changingTrack = false;
       }
+
       this._handleTrackEnd();
     });
 
@@ -358,7 +372,19 @@ class AudioEngine {
     this._clearPendingNext();
 
     this._currentTransitionId++;
-    this.isCrossfading = false;
+    const transitionId = this._currentTransitionId;
+
+    if (this.isCrossfading || this._changingTrack) {
+      console.warn(
+        "Manual play requested during active transition. Hard reset of players.",
+      );
+      this.isCrossfading = false;
+      this._changingTrack = false;
+      this.activePlayer.pause();
+      this.nextPlayer.pause();
+      this.activePlayer.src = "";
+      this.nextPlayer.src = "";
+    }
 
     this.currentTrack = track;
     this.nextTrack = null;
@@ -371,6 +397,14 @@ class AudioEngine {
     this._updateNativeNotification(track, true);
     this._emit("trackchange", { track });
     this._changingTrack = true;
+
+    setTimeout(() => {
+      if (this._currentTransitionId === transitionId && this._changingTrack) {
+        console.warn("Track change state took too long. Forcing reset flag.");
+        this._changingTrack = false;
+      }
+    }, 3000);
+
     this.activePlayer.pause();
     this.activePlayer.src = track.src;
     this.activePlayer.volume = this._eqInitialized ? 1.0 : this.volume;
@@ -379,16 +413,16 @@ class AudioEngine {
       this.audioCtx.resume().catch(() => {});
     }
 
-    const transitionId = this._currentTransitionId;
-
     setTimeout(() => {
-      if (this._currentTransitionId !== transitionId) return;
+      if (this._currentTransitionId !== transitionId) {
+        this._changingTrack = false;
+        return;
+      }
 
       this.activePlayer
         .play()
         .then(() => {
           if (this._currentTransitionId !== transitionId) return;
-
           this._changingTrack = false;
           if (track.cover) {
             import("./utils.js").then(
@@ -410,9 +444,8 @@ class AudioEngine {
           }
         })
         .catch((err) => {
-          if (this._currentTransitionId !== transitionId) return;
-
           this._changingTrack = false;
+          if (this._currentTransitionId !== transitionId) return;
           console.error("Play failed:", err);
           if (err.name !== "NotAllowedError") {
             this._scheduleNext(transitionId);
@@ -474,13 +507,16 @@ class AudioEngine {
 
       fadeOutPlayer.pause();
       fadeOutPlayer.src = "";
-      this.isCrossfading = false;
     } catch (err) {
       console.error("Transition failed, attempting recovery:", err);
-      this.isCrossfading = false;
       if (this._currentTransitionId === transitionId) {
-        // Recovery: if transition play failed, try to start normally via hard reset
+        // Hard reset to ensure playback doesn't stop
         this.play(this.currentTrack);
+      }
+    } finally {
+      // Logic safety: always reset crossfading flag if it's still this transition
+      if (this._currentTransitionId === transitionId) {
+        this.isCrossfading = false;
       }
     }
   }
@@ -561,34 +597,36 @@ class AudioEngine {
     localStorage.setItem("flow_crossfade", this.crossfadeDuration.toString());
   }
 
-  setSleepTimer(minutes) {
+  startSleepTimer(minutes) {
+    this.stopSleepTimer();
+
+    if (minutes <= 0) return;
+
+    this.sleepTimerEndTime = Date.now() + minutes * 60 * 1000;
+    this.sleepTimerRemaining = minutes * 60 * 1000;
+    this._emit("sleeptimer", { remaining: this.sleepTimerRemaining });
+
+    this._sleepInterval = setInterval(() => {
+      const remaining = Math.max(0, this.sleepTimerEndTime - Date.now());
+      this.sleepTimerRemaining = remaining;
+      this._emit("sleeptimer", { remaining });
+
+      if (remaining <= 0) {
+        this.stopSleepTimer();
+        this.pause();
+        store.showToast("Sleep timer finished. Goodnight! 💤");
+      }
+    }, 1000);
+  }
+
+  stopSleepTimer() {
     if (this._sleepInterval) {
       clearInterval(this._sleepInterval);
       this._sleepInterval = null;
     }
-
-    if (minutes <= 0) {
-      this._emit("sleeptimer", { remaining: 0 });
-      return;
-    }
-
-    let remainingMs = minutes * 60 * 1000;
-    this._emit("sleeptimer", { remaining: remainingMs });
-
-    this._sleepInterval = setInterval(() => {
-      remainingMs -= 1000;
-      if (remainingMs <= 0) {
-        clearInterval(this._sleepInterval);
-        this._sleepInterval = null;
-        this.pause();
-        this._emit("sleeptimer", { remaining: 0 });
-        this._emit("toast", {
-          message: "Sleep timer triggered. Goodnight! 💤",
-        });
-      } else {
-        this._emit("sleeptimer", { remaining: remainingMs });
-      }
-    }, 1000);
+    this.sleepTimerRemaining = 0;
+    this.sleepTimerEndTime = 0;
+    this._emit("sleeptimer", { remaining: 0 });
   }
 
   toggleRepeat() {

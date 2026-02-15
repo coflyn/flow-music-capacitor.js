@@ -317,11 +317,18 @@ class Library {
   }
 
   getTracksByAlbum(albumId) {
-    return this.tracks.filter((t) => t.albumId === albumId);
+    return this.tracks
+      .filter((t) => t.albumId === albumId)
+      .sort((a, b) => (a.track || 0) - (b.track || 0));
   }
 
   getTracksByArtist(artistId) {
-    return this.tracks.filter((t) => t.artistId === artistId);
+    return this.tracks
+      .filter((t) => t.artistId === artistId)
+      .sort(
+        (a, b) =>
+          (a.year || 0) - (b.year || 0) || (a.track || 0) - (b.track || 0),
+      );
   }
 
   addExternalTrack(track) {

@@ -1,6 +1,7 @@
 import { icons } from "../core/icons.js";
 import { musicLibrary } from "../core/library.js";
 import { queueManager } from "../core/queue.js";
+import { audioEngine } from "../core/audioEngine.js";
 import { store } from "../core/store.js";
 import { createElement, formatTime } from "../core/utils.js";
 import { renderTrackList } from "../components/trackList.js";
@@ -18,7 +19,7 @@ export function renderPlaylist(container, params) {
   const totalDuration = tracks.reduce((sum, t) => sum + t.duration, 0);
   const coverArt = playlist.cover || tracks[0]?.cover || "";
 
-  const page = createElement("div", "page");
+  const page = createElement("div", "page playlist-page");
 
   page.innerHTML = `
     <div class="page-header">
@@ -48,7 +49,7 @@ export function renderPlaylist(container, params) {
         tracks.length > 0
           ? `
         <button class="action-btn-play" id="play-playlist">${icons.play}</button>
-        <button class="action-btn" id="shuffle-playlist">Shuffle</button>
+        <button class="action-btn" id="shuffle-playlist">${icons.shuffle}</button>
       `
           : ""
       }
@@ -80,8 +81,11 @@ export function renderPlaylist(container, params) {
   const shuffleBtn = page.querySelector("#shuffle-playlist");
   if (shuffleBtn) {
     shuffleBtn.addEventListener("click", () => {
-      queueManager.playAll(tracks, 0);
-      queueManager.toggleShuffle();
+      if (!audioEngine.shuffleMode) {
+        queueManager.toggleShuffle();
+      }
+      const randomIndex = Math.floor(Math.random() * tracks.length);
+      queueManager.playAll(tracks, randomIndex);
     });
   }
 

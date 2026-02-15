@@ -18,7 +18,10 @@ export function createNowPlaying() {
     <div class="now-playing-content">
       <div class="now-playing-header">
         <button class="now-playing-close" id="np-close">${icons.chevronDown}</button>
-        <span class="now-playing-source" id="np-source">Playing from Library</span>
+        <div style="display: flex; flex-direction: column; align-items: center; min-width: 0;">
+          <span class="now-playing-source" id="np-source">Playing from Library</span>
+          <div id="np-timer" class="hidden" style="font-size: 10px; font-weight: 700; color: var(--accent); margin-top: 2px;"></div>
+        </div>
         <button class="now-playing-menu" id="np-menu">${icons.moreVert}</button>
       </div>
 
@@ -204,6 +207,53 @@ export function createNowPlaying() {
     const btn = el.querySelector("#np-repeat");
     btn.className = `control-btn${mode !== "off" ? " active" : ""}`;
     btn.innerHTML = mode === "one" ? icons.repeatOne : icons.repeat;
+  });
+
+  audioEngine.on("sleeptimer", ({ remaining }) => {
+    const timerEl = el.querySelector("#np-timer");
+    if (!timerEl) return;
+
+    if (remaining > 0) {
+      const totalSec = Math.ceil(remaining / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      timerEl.textContent = `SLEEP TIMER: ${m}:${s.toString().padStart(2, "0")}`;
+      timerEl.classList.remove("hidden");
+    } else {
+      timerEl.classList.add("hidden");
+    }
+  });
+
+  let touchStartY = 0;
+  el.addEventListener(
+    "touchstart",
+    (e) => {
+      if (
+        e.target.closest(".progress-bar-wrapper") ||
+        e.target.closest(".control-btn") ||
+        e.target.closest("input")
+      )
+        return;
+      touchStartY = e.touches[0].clientY;
+    },
+    { passive: true },
+  );
+
+  el.addEventListener(
+    "touchmove",
+    (e) => {
+      if (touchStartY === 0) return;
+      const deltaY = e.touches[0].clientY - touchStartY;
+      if (deltaY > 100) {
+        store.set("nowPlayingOpen", false);
+        touchStartY = 0;
+      }
+    },
+    { passive: true },
+  );
+
+  el.addEventListener("touchend", () => {
+    touchStartY = 0;
   });
 
   store.on("nowPlayingOpen", (open) => {

@@ -6,6 +6,7 @@ import { store } from "./core/store.js";
 import { musicLibrary } from "./core/library.js";
 import { audioEngine } from "./core/audioEngine.js";
 import { queueManager } from "./core/queue.js";
+import { haptics } from "./core/haptics.js";
 import { createElement } from "./core/utils.js";
 
 import { createMiniPlayer } from "./components/miniPlayer.js";
@@ -242,6 +243,7 @@ export async function initApp() {
   appEl.querySelectorAll("[data-route]").forEach((item) => {
     item.addEventListener("click", (e) => {
       e.preventDefault();
+      haptics.light();
       router.navigate(item.dataset.route);
     });
   });
@@ -296,9 +298,14 @@ export async function initApp() {
       router._resolve();
       updateSidebarPlaylists(musicLibrary);
 
-      setTimeout(() => {
-        store.showToast(`Welcome back to Flow 🛡️✨`);
-      }, 1000);
+      const scannedFolders = musicLibrary.getScannedFolders();
+      if (scannedFolders.length === 0) {
+        showOnboardingModal();
+      } else {
+        setTimeout(() => {
+          store.showToast(`Welcome back to Flow 🛡️✨`);
+        }, 1000);
+      }
     })
     .catch((err) => {
       console.warn("Library init failed", err);
@@ -310,5 +317,47 @@ export async function initApp() {
     } else if (data && data.tracks === 0) {
       store.showToast("No music found on device.");
     }
+  });
+}
+
+function showOnboardingModal() {
+  const content = createElement("div", "onboarding-container");
+  content.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-icon-ripple">
+        <div class="onboarding-icon">
+          ${icons.sparkles}
+        </div>
+      </div>
+      <h2 class="onboarding-title">Welcome to Flow</h2>
+      <p class="onboarding-text">
+        Experience your music collection like never before. To begin, let's locate your music library.
+      </p>
+      
+      <div class="onboarding-action-box" style="margin-top: var(--sp-4);">
+        <button class="btn btn-primary btn-lg onboarding-btn" id="onboarding-pick-btn">
+          ${icons.folder}
+          <span>Choose Music Folder</span>
+        </button>
+      </div>
+      
+      <p class="onboarding-footer">
+        Your music stays 100% private and offline.
+      </p>
+    </div>
+  `;
+
+  content
+    .querySelector("#onboarding-pick-btn")
+    .addEventListener("click", () => {
+      haptics.medium();
+      musicLibrary.pickAndScanFolder();
+      store.set("modal", null);
+    });
+
+  store.set("modal", {
+    title: "",
+    content: content,
+    hideClose: true,
   });
 }

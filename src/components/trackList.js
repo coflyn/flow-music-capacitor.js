@@ -99,5 +99,37 @@ export function renderTrackList(tracks, container, options = {}) {
     list.appendChild(item);
   });
 
+  const updateActiveStates = () => {
+    const currentTrack = queueManager.getCurrentTrack();
+    list.querySelectorAll(".track-item").forEach((item) => {
+      const isCurrent = item.dataset.trackId === currentTrack?.id;
+      item.classList.toggle("playing", isCurrent);
+
+      const numCol = item.querySelector(".track-number-col");
+      if (numCol) {
+        if (isCurrent && audioEngine.isPlaying) {
+          numCol.innerHTML = `
+            <div class="eq-bars">
+              <div class="eq-bar"></div>
+              <div class="eq-bar"></div>
+              <div class="eq-bar"></div>
+              <div class="eq-bar"></div>
+            </div>
+          `;
+        } else {
+          const idx = item.dataset.index;
+          numCol.innerHTML = `
+            <span class="track-number">${idx}</span>
+            <span class="track-play-icon">${icons.play}</span>
+          `;
+        }
+      }
+    });
+  };
+
+  audioEngine.on("trackchange", updateActiveStates);
+  audioEngine.on("play", updateActiveStates);
+  audioEngine.on("pause", updateActiveStates);
+
   container.appendChild(list);
 }
