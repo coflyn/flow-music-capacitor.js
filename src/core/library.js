@@ -521,6 +521,11 @@ class Library {
     return this._playlists;
   }
 
+  /**
+   * Get a playlist object by its ID
+   * @param {string} id
+   * @returns {Object|null}
+   */
   getPlaylistById(id) {
     return this._playlists.find((p) => p.id === id);
   }
@@ -573,6 +578,12 @@ class Library {
     return track ? track.cover : "";
   }
 
+  /**
+   * Add a track to a playlist
+   * @param {string} playlistId
+   * @param {string} trackId
+   * @returns {boolean}
+   */
   addTrackToPlaylist(playlistId, trackId) {
     const pl = this.getPlaylistById(playlistId);
     if (pl && !pl.trackIds.includes(trackId)) {

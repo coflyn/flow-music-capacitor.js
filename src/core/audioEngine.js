@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { store } from "./store.js";
 
 const NowPlaying = Capacitor.isNativePlatform()
-  ? registerPlugin("NowPlaying")
+  ? registerPlugin("ZNowPlaying")
   : null;
 
 class AudioEngine {
@@ -329,7 +329,8 @@ class AudioEngine {
           this._changingTrack = false;
           if (this._currentTransitionId !== transitionId) return;
           console.error("Play failed:", err);
-          if (err.name !== "NotAllowedError") {
+
+          if (err.name !== "NotAllowedError" && err.name !== "AbortError") {
             this._scheduleNext(transitionId);
           }
         });
@@ -396,7 +397,6 @@ class AudioEngine {
         this.play(this.currentTrack);
       }
     } finally {
-      // Logic safety: always reset crossfading flag if it's still this transition
       if (this._currentTransitionId === transitionId) {
         this.isCrossfading = false;
       }
@@ -502,26 +502,18 @@ class AudioEngine {
   }
 
   toggleRepeat() {
-    // Modes:
-    // 1. off + stopAfterCurrent = Play Once
-    // 2. off + !stopAfterCurrent = Play to End (Default)
-    // 3. all = Repeat All
-    // 4. one = Repeat One
+    // Modes: 1. off + stopAfterCurrent = Play Once, 2. off + !stopAfterCurrent = Play to End, 3. all = Repeat All, 4. one = Repeat One
 
     if (this.repeatMode === "off" && this.stopAfterCurrent) {
-      // From Play Once -> Play to End
       this.repeatMode = "off";
       this.stopAfterCurrent = false;
     } else if (this.repeatMode === "off" && !this.stopAfterCurrent) {
-      // From Play to End -> Repeat All
       this.repeatMode = "all";
       this.stopAfterCurrent = false;
     } else if (this.repeatMode === "all") {
-      // From Repeat All -> Repeat One
       this.repeatMode = "one";
       this.stopAfterCurrent = false;
     } else {
-      // From Repeat One -> Play Once
       this.repeatMode = "off";
       this.stopAfterCurrent = true;
     }
@@ -642,7 +634,7 @@ class AudioEngine {
           duration: this.duration,
         }).catch(() => {});
       }
-    }, 5000); // Update every 5 seconds
+    }, 5000);
   }
 
   _stopPositionUpdates() {

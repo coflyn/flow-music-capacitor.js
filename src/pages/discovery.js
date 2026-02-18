@@ -5,7 +5,7 @@ import { router } from "../router.js";
 import {
   createElement,
   cleanTitle,
-  getDominantColor,
+  getDominantColors,
   rgbToHex,
 } from "../core/utils.js";
 import { renderTrackList } from "../components/trackList.js";
@@ -133,7 +133,8 @@ export function renderDiscovery(container) {
     });
 
     if (randomAlbum.cover) {
-      getDominantColor(randomAlbum.cover).then((color) => {
+      getDominantColors(randomAlbum.cover).then((colors) => {
+        const color = colors[0];
         const hex = rgbToHex(color.r, color.g, color.b);
         const card = page.querySelector(".lucky-dip-card");
         if (card) {

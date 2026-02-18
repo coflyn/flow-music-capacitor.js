@@ -5,9 +5,18 @@ import { queueManager } from "../core/queue.js";
 import { musicLibrary } from "../core/library.js";
 import { store } from "../core/store.js";
 import { router } from "../router.js";
-import { formatTime, createElement, cleanTitle } from "../core/utils.js";
+import {
+  formatTime,
+  createElement,
+  cleanTitle,
+  getDominantColors,
+  rgbToHex,
+} from "../core/utils.js";
+import { lrcHandler } from "../core/lrcHandler.js";
 
 let progressDragging = false;
+let currentLyrics = [];
+let lyricsActive = false;
 
 export function createNowPlaying() {
   const el = createElement("div", "now-playing");
@@ -25,8 +34,21 @@ export function createNowPlaying() {
         <button class="now-playing-menu" id="np-menu">${icons.moreVert}</button>
       </div>
 
-      <div class="now-playing-art-container">
-        <img class="now-playing-art" id="np-art" src="" alt="">
+      <div class="now-playing-pages-wrapper" id="np-pages-wrapper">
+        <div class="now-playing-pages" id="np-pages">
+          <div class="now-playing-page" id="np-page-art">
+            <img class="now-playing-art" id="np-art" src="" alt="">
+          </div>
+          <div class="now-playing-page" id="np-page-lyrics">
+            <div class="now-playing-lyrics" id="np-lyrics">
+              <div class="lyrics-scroll" id="np-lyrics-content"></div>
+            </div>
+          </div>
+        </div>
+        <div class="np-pager-dots">
+          <div class="np-dot active" data-index="0"></div>
+          <div class="np-dot" data-index="1"></div>
+        </div>
       </div>
 
       <div class="now-playing-info">
@@ -117,7 +139,7 @@ export function createNowPlaying() {
 
   el.querySelector("#np-volume").addEventListener("click", () => {
     if (Capacitor.isNativePlatform()) {
-      registerPlugin("NowPlaying")
+      registerPlugin("ZNowPlaying")
         .showVolume()
         .catch(() => showVolumeModal());
     } else {
@@ -135,6 +157,99 @@ export function createNowPlaying() {
     if (track) {
       store.set("contextMenu", { track });
     }
+  });
+
+  let currentPage = 0;
+  const pages = el.querySelector("#np-pages");
+  const dots = el.querySelectorAll(".np-dot");
+  const lyricsContainer = el.querySelector("#np-lyrics");
+  const lyricsContent = el.querySelector("#np-lyrics-content");
+
+  const scrollToPage = (index) => {
+    currentPage = index;
+    pages.style.transform = `translateX(-${index * 50}%)`;
+    dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
+    if (index === 1) {
+      lyricsActive = true;
+      syncLyrics(audioEngine.currentTime);
+    } else {
+      lyricsActive = false;
+    }
+  };
+
+  let startX = 0;
+  let startY = 0;
+  let moveX = 0;
+  let moveY = 0;
+  let isSwiping = false;
+  let isScrolling = false;
+  const pagesWrapper = el.querySelector("#np-pages-wrapper");
+
+  pagesWrapper.addEventListener(
+    "touchstart",
+    (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      isSwiping = false;
+      isScrolling = false;
+      pages.style.transition = "none";
+    },
+    { passive: true },
+  );
+
+  pagesWrapper.addEventListener(
+    "touchmove",
+    (e) => {
+      moveX = e.touches[0].clientX - startX;
+      moveY = e.touches[0].clientY - startY;
+
+      if (isScrolling) return;
+
+      if (!isSwiping) {
+        if (Math.abs(moveX) > Math.abs(moveY) && Math.abs(moveX) > 10) {
+          isSwiping = true;
+        } else if (Math.abs(moveY) > Math.abs(moveX) && Math.abs(moveY) > 10) {
+          isScrolling = true;
+          return;
+        }
+      }
+
+      if (isSwiping) {
+        const offset = -currentPage * pagesWrapper.offsetWidth + moveX;
+        if (offset > 0 || offset < -pagesWrapper.offsetWidth) {
+          pages.style.transform = `translateX(${offset / 2}px)`;
+        } else {
+          pages.style.transform = `translateX(${offset}px)`;
+        }
+      }
+    },
+    { passive: true },
+  );
+
+  pagesWrapper.addEventListener("touchend", () => {
+    if (isSwiping) {
+      pages.style.transition =
+        "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1)";
+      if (Math.abs(moveX) > 50) {
+        if (moveX < 0 && currentPage === 0) scrollToPage(1);
+        else if (moveX > 0 && currentPage === 1) scrollToPage(0);
+        else scrollToPage(currentPage);
+      } else {
+        scrollToPage(currentPage);
+      }
+    }
+    startX = 0;
+    startY = 0;
+    moveX = 0;
+    moveY = 0;
+    isSwiping = false;
+    isScrolling = false;
+  });
+
+  dots.forEach((dot) => {
+    dot.addEventListener("click", () => {
+      scrollToPage(parseInt(dot.dataset.index));
+    });
   });
 
   const progressWrapper = el.querySelector("#np-progress-wrapper");
@@ -183,7 +298,10 @@ export function createNowPlaying() {
   window.addEventListener("mouseup", endDrag);
   window.addEventListener("touchend", endDrag);
 
-  audioEngine.on("trackchange", ({ track }) => updateNowPlayingUI(el, track));
+  audioEngine.on("trackchange", ({ track }) => {
+    updateNowPlayingUI(el, track);
+    loadLyrics(track);
+  });
   audioEngine.on("play", () => {
     el.querySelector("#np-play").innerHTML = icons.pause;
   });
@@ -197,8 +315,106 @@ export function createNowPlaying() {
       el.querySelector("#np-time-current").textContent =
         formatTime(currentTime);
       el.querySelector("#np-time-total").textContent = formatTime(duration);
+      if (lyricsActive) {
+        syncLyrics(currentTime);
+      }
     }
   });
+
+  async function loadLyrics(track) {
+    currentLyrics = [];
+    lyricsContent.innerHTML =
+      '<div class="lyric-line loading">Looking for lyrics...</div>';
+
+    let lyrics = null;
+
+    if (!lyrics && Capacitor.isNativePlatform() && track.src) {
+      let lrcPath = "";
+      if (track.src.startsWith("file://")) {
+        lrcPath = track.src.replace("file://", "").split("?")[0];
+      } else if (track.src.startsWith("/")) {
+        lrcPath = track.src.split("?")[0];
+      }
+
+      if (lrcPath) {
+        const localLrc =
+          lrcPath.substring(0, lrcPath.lastIndexOf(".")) + ".lrc";
+        lyrics = await lrcHandler.fetchFromDevice(localLrc);
+      }
+    }
+
+    if (!lyrics && Capacitor.isNativePlatform()) {
+      try {
+        const { Directory } = await import("@capacitor/filesystem");
+        const filename = `${track.id}.lrc`;
+        lyrics = await lrcHandler.fetchFromDevice(filename, Directory.Data);
+      } catch (e) {}
+    }
+
+    if (!lyrics) {
+      const filename = track.src.split("/").pop().split(".")[0];
+      const lrcPath = `./assets/lyrics/${filename}.lrc`;
+      lyrics = await lrcHandler.fetch(lrcPath);
+    }
+
+    if (lyrics) {
+      currentLyrics = lyrics;
+      renderLyrics();
+    } else {
+      lyricsContent.innerHTML =
+        '<div class="lyric-line no-lyrics">No lyrics found</div>';
+    }
+  }
+
+  function renderLyrics() {
+    lyricsContent.innerHTML = currentLyrics
+      .map(
+        (line, index) =>
+          `<div class="lyric-line" data-index="${index}" data-time="${line.time}">${line.text}</div>`,
+      )
+      .join("");
+
+    lyricsContent.querySelectorAll(".lyric-line").forEach((line) => {
+      line.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const time = parseFloat(line.dataset.time);
+        if (!isNaN(time)) {
+          audioEngine.seek(time);
+          if (!audioEngine.isPlaying) audioEngine.play();
+        }
+      });
+    });
+  }
+
+  function syncLyrics(time) {
+    if (!currentLyrics.length) return;
+
+    let activeIndex = -1;
+    for (let i = 0; i < currentLyrics.length; i++) {
+      if (time >= currentLyrics[i].time) {
+        activeIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    if (activeIndex !== -1) {
+      const lines = lyricsContent.querySelectorAll(".lyric-line");
+      lines.forEach((line, i) => {
+        line.classList.toggle("active", i === activeIndex);
+        line.classList.toggle("past", i < activeIndex);
+      });
+
+      const activeLine = lines[activeIndex];
+      if (activeLine) {
+        const wrapperHeight = lyricsContainer.offsetHeight;
+        const lineOffset = activeLine.offsetTop;
+        const lineHeight = activeLine.offsetHeight;
+
+        lyricsContent.style.transform = `translateY(${wrapperHeight / 2 - lineOffset - lineHeight / 2}px)`;
+      }
+    }
+  }
 
   audioEngine.on("shufflechange", ({ enabled }) => {
     el.querySelector("#np-shuffle").className =
@@ -276,18 +492,39 @@ export function createNowPlaying() {
 
   musicLibrary.on("updated", () => {
     const track = queueManager.getCurrentTrack();
-    if (track) updateNowPlayingUI(el, track);
+    if (track) {
+      updateNowPlayingUI(el, track);
+      loadLyrics(track);
+    }
   });
+
+  const initialTrack = queueManager.getCurrentTrack();
+  if (initialTrack) {
+    updateNowPlayingUI(el, initialTrack);
+    loadLyrics(initialTrack);
+  }
 
   return el;
 }
 
 function updateNowPlayingUI(el, track) {
   el.querySelector("#np-art").src = track.cover || "";
-  el.querySelector("#np-bg").style.backgroundImage = `url(${track.cover})`;
   el.querySelector("#np-title").textContent = cleanTitle(track.title, 40);
   el.querySelector("#np-artist").textContent = track.artist;
   updateLikeButton(el, musicLibrary.isFavorite(track.id));
+
+  const bg = el.querySelector("#np-bg");
+  if (track.cover) {
+    getDominantColors(track.cover).then(([c1, c2]) => {
+      const hex1 = rgbToHex(c1.r, c1.g, c1.b);
+      const hex2 = rgbToHex(c2.r, c2.g, c2.b);
+      bg.style.setProperty("--np-bg-color-1", hex1);
+      bg.style.setProperty("--np-bg-color-2", hex2);
+    });
+  } else {
+    bg.style.setProperty("--np-bg-color-1", "#121212");
+    bg.style.setProperty("--np-bg-color-2", "#1a1a1a");
+  }
 }
 
 function updateLikeButton(el, liked) {

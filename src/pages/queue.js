@@ -61,7 +61,6 @@ function renderQueueContent(contentEl) {
   const repeatMode = audioEngine.repeatMode;
   const isStopAfter = audioEngine.stopAfterCurrent;
 
-  // Mode Bar
   const modeBar = createElement("div", "queue-mode-bar");
 
   const shuffleBtn = createElement(

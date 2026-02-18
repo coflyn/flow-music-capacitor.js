@@ -1,4 +1,4 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { icons } from "./core/icons.js";
@@ -189,9 +189,7 @@ export async function initApp() {
 
     if (Capacitor.getPlatform() === "android") {
       try {
-        const NowPlaying = (await import("@capacitor/core")).registerPlugin(
-          "NowPlaying",
-        );
+        const NowPlaying = registerPlugin("ZNowPlaying");
         NowPlaying.requestPermissions().catch(() => {});
       } catch (e) {}
     }

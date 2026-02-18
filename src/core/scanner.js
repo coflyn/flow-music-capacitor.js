@@ -1,8 +1,14 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import tracksData from "../data/tracks.json";
 
-const MusicScanner = registerPlugin("MusicScanner");
+const MusicScanner = registerPlugin("ZMusicScanner");
+burial: console.log("MusicScanner plugin registered as ZMusicScanner");
 
+/**
+ * Converts a file URI for use in the webview
+ * @param {string} uri
+ * @returns {string}
+ */
 function convertUri(uri) {
   if (!uri) return "";
   if (uri.startsWith("http")) return uri;
@@ -50,13 +56,22 @@ class LocalScanner {
   async chooseFolder() {
     if (!this.isNative()) return null;
     try {
-      return await MusicScanner.chooseFolder();
+      console.log("Calling MusicScanner.chooseFolder...");
+      const result = await MusicScanner.chooseFolder();
+      console.log("MusicScanner.chooseFolder result:", result);
+      return result;
     } catch (err) {
       console.error("Choose folder failed:", err);
+      alert("Choose folder failed: " + (err.message || err));
       return null;
     }
   }
 
+  /**
+   * Scans a specific folder for music files
+   * @param {string} folderUri
+   * @returns {Promise<Object>}
+   */
   async scanFolder(folderUri) {
     if (!this.isNative()) return this._getDemoData();
 
@@ -132,9 +147,7 @@ class LocalScanner {
       try {
         localStorage.setItem("zplayer_scan_cache", JSON.stringify(processed));
         localStorage.setItem("zplayer_scan_time", Date.now().toString());
-      } catch {
-        /* storage full */
-      }
+      } catch {}
 
       this._isScanning = false;
       this._emit("scancomplete", { count: processed.tracks.length });
@@ -241,9 +254,7 @@ class LocalScanner {
     try {
       const cached = localStorage.getItem("zplayer_scan_cache");
       if (cached) return JSON.parse(cached);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     return null;
   }
 

@@ -28,7 +28,6 @@ function showModal(wrapper, modal) {
   } else if (modal.type === "add-tracks") {
     showAddTracksModal(wrapper, modal.data);
   } else if (modal.type === "scan-folder") {
-    // Added new modal type
     showScanFolderModal(wrapper);
   } else if (modal.content) {
     showContentModal(wrapper, modal);

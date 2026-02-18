@@ -170,16 +170,13 @@ function showContextMenu(wrapper, track, hideContextMenu) {
   wrapper
     .querySelector('[data-action="edit"]')
     .addEventListener("click", () => {
-      const ctx = store.get("contextMenu");
-      if (ctx && ctx.track) {
-        import("./metadataEditor.js").then(({ createMetadataEditor }) => {
-          store.set("modal", {
-            title: "Edit Metadata",
-            content: createMetadataEditor(ctx.track),
-          });
-          store.set("contextMenu", null);
+      import("./metadataEditor.js").then(({ createMetadataEditor }) => {
+        store.set("modal", {
+          title: "Edit Metadata",
+          content: createMetadataEditor(track),
         });
-      }
+        store.set("contextMenu", null);
+      });
     });
 }
 

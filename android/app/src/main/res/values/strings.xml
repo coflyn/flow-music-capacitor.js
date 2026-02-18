@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Flow</string>
     <string name="title_activity_main">Flow</string>
-    <string name="package_name">com.horu.flow</string>
-    <string name="custom_url_scheme">com.horu.flow</string>
+    <string name="package_name">com.coflyn.flow</string>
+    <string name="custom_url_scheme">com.coflyn.flow</string>
 </resources>

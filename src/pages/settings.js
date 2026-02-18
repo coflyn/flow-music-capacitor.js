@@ -60,7 +60,7 @@ export function renderSettings(container) {
           <input type="file" id="bg-file-input" accept="image/*" style="display: none;">
         </div>
 
-        <!-- Accent Color (simplified) -->
+        <!-- Themes -->
          <div class="setting-row">
           <div class="setting-icon">${icons.palette}</div>
           <div class="setting-content">

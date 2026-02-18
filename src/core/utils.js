@@ -4,7 +4,7 @@ export function formatTime(seconds) {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
-export async function getDominantColor(imgSrc) {
+export async function getDominantColors(imgSrc) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -17,23 +17,35 @@ export async function getDominantColor(imgSrc) {
       ctx.drawImage(img, 0, 0, 10, 10);
       const data = ctx.getImageData(0, 0, 10, 10).data;
 
-      let r = 0,
-        g = 0,
-        b = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        r += data[i];
-        g += data[i + 1];
-        b += data[i + 2];
-      }
+      const getAvg = (start, end) => {
+        let r = 0,
+          g = 0,
+          b = 0;
+        let count = 0;
+        for (let i = start; i < end; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          count++;
+        }
+        return {
+          r: Math.round(r / count),
+          g: Math.round(g / count),
+          b: Math.round(b / count),
+        };
+      };
 
-      const count = data.length / 4;
-      resolve({
-        r: Math.round(r / count),
-        g: Math.round(g / count),
-        b: Math.round(b / count),
-      });
+      const mid = Math.floor(data.length / 8) * 4;
+      const color1 = getAvg(0, mid);
+      const color2 = getAvg(mid, data.length);
+
+      resolve([color1, color2]);
     };
-    img.onerror = () => resolve({ r: 29, g: 185, b: 84 });
+    img.onerror = () =>
+      resolve([
+        { r: 29, g: 185, b: 84 },
+        { r: 18, g: 18, b: 18 },
+      ]);
   });
 }
 
